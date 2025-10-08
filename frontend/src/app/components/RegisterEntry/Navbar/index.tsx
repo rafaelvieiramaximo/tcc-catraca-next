@@ -13,7 +13,7 @@ export default function NavBarRegister({ onLogout, user }: NavBarRegisterProps) 
     if (typeof window !== "undefined") {
       const confirmLogout = window.confirm("Deseja realmente sair do sistema?");
       if (confirmLogout && onLogout) {
-        onLogout(); // 🔥 Agora isso vai redirecionar automaticamente
+        onLogout();
       }
     }
   };
@@ -33,7 +33,6 @@ export default function NavBarRegister({ onLogout, user }: NavBarRegisterProps) 
         <div className="flex items-center space-x-4">
           {user && (
             <div className="text-right text-white">
-              <p className="font-semibold">{user.nome.split(' ')[0]}</p>
               <p className="text-sm opacity-90 capitalize">{user.tipo.toLowerCase()}</p>
             </div>
           )}
