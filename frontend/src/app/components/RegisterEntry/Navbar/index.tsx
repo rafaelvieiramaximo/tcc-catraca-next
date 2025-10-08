@@ -1,17 +1,18 @@
-// components/Header/index.tsx
+// app/components/RegisterEntry/Navbar/index.tsx
 'use client';
 
-import { UsuarioCompleto } from '../../services/database-service';
+import { UsuarioCompleto } from '../../../services/database-service';
 
-interface HeaderProps {
-  onLogout: () => void;
-  pageName: string;
+interface NavBarRegisterProps {
+  onLogout?: () => void;
   user?: UsuarioCompleto | null;
 }
 
-export default function Header({ onLogout, pageName, user }: HeaderProps) {
-  const formatUserName = (name: string) => {
-    return name.split(' ')[0]; // Retorna apenas o primeiro nome
+export default function NavBarRegister({ onLogout, user }: NavBarRegisterProps) {
+  const handleLogout = () => {
+    if (onLogout) {
+      onLogout();
+    }
   };
 
   return (
@@ -20,8 +21,8 @@ export default function Header({ onLogout, pageName, user }: HeaderProps) {
         {/* Logo e Nome do Sistema */}
         <div className="flex items-center space-x-4">
           <div className="text-white">
-            <h1 className="text-xl font-bold ">{pageName}</h1>
-            <p className="text-sm opacity-90">FATEC SISTEMA DE CONTROLE DE ACESSO</p>
+            <h1 className="text-xl font-bold">FATEC PORTARIA</h1>
+            <p className="text-sm opacity-90">Registro de Entrada</p>
           </div>
         </div>
 
@@ -29,17 +30,16 @@ export default function Header({ onLogout, pageName, user }: HeaderProps) {
         <div className="flex items-center space-x-4">
           {user && (
             <div className="text-right text-white">
-              <p className="font-semibold">{formatUserName(user.nome)}</p>
+              <p className="font-semibold">{user.nome.split(' ')[0]}</p>
               <p className="text-sm opacity-90 capitalize">{user.tipo.toLowerCase()}</p>
             </div>
           )}
           
           <button
-            onClick={onLogout}
+            onClick={handleLogout}
             className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg font-semibold transition-colors shadow-md flex items-center justify-center"
             title="Sair do sistema"
           >
-            {/* Ícone SVG de logout como fallback */}
             <svg 
               width="20" 
               height="20" 
