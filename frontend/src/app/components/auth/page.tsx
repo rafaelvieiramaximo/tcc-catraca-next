@@ -1,6 +1,8 @@
+// components/auth/page.tsx
 'use client';
 
 import React, { useEffect, useState } from "react";
+import Image from 'next/image';
 import { databaseService, UsuarioCompleto, TipoUsuario } from "../../services/database-service";
 import "./styles.css";
 
@@ -90,9 +92,16 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
     <div className="login-container" key={key}>
       <div className="login-card">
         <div className="login-header">
-          {/* Logo - substitua pela sua imagem */}
-          <div className="logo-placeholder">
-            <span className="logo-text">FATEC</span>
+          {/* Logo - Corrigido usando Image do Next.js */}
+          <div className="logo-container">
+            <Image 
+              src="/assets/images/logo_fatec.png" 
+              alt="Logo FATEC" 
+              width={120} 
+              height={70}
+              className="logo-image"
+              priority 
+            />
           </div>
         </div>
 
@@ -169,23 +178,6 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
             </span>
           </button>
         </div>
-
-        {/* Help Section (opcional) */}
-        {/* <div className="help-section">
-          <div className="help-link">
-            <span className="help-link-text">
-              🔐 Primeiro acesso na Área do {tipo === "ADMIN" ? "Administrador" : "Portaria"}?
-            </span>
-            <span className="help-link-action">Clique aqui 👆</span>
-          </div>
-
-          <div className="help-link">
-            <span className="help-link-text">
-              🔄 Esqueceu a Senha da Área do {tipo === "ADMIN" ? "Administrador" : "Portaria"}?
-            </span>
-            <span className="help-link-action">Clique aqui 👆</span>
-          </div>
-        </div> */}
 
         {process.env.NODE_ENV === 'development' && (
           <div className="dev-container">
