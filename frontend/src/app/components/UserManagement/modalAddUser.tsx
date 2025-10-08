@@ -188,9 +188,8 @@ export default function AddUserModal({
     if (!visible) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-hidden shadow-2xl border border-gray-200">
-                {/* Header */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-opacity-20">
+            <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-hidden shadow-2xl border border-gray-200 mx-4">
                 <div className="flex justify-between items-center p-5 border-b border-gray-200 bg-white">
                     <div className="text-lg font-bold text-gray-800">
                         {userToEdit ? "Editar Usuário" : "Cadastro de Usuário"}
@@ -260,8 +259,8 @@ export default function AddUserModal({
                             <div className="flex justify-between gap-2">
                                 <button
                                     className={`flex-1 py-3 rounded-lg border text-sm font-medium transition-colors ${formData.tipo === "ESTUDANTE"
-                                            ? "bg-[#4A90A4] border-[#4A90A4] text-white"
-                                            : "bg-gray-50 border-gray-200 text-gray-600"
+                                        ? "bg-[#4A90A4] border-[#4A90A4] text-white"
+                                        : "bg-gray-50 border-gray-200 text-gray-600"
                                         }`}
                                     onClick={() => setFormData(prev => ({ ...prev, tipo: "ESTUDANTE" }))}
                                 >
@@ -269,8 +268,8 @@ export default function AddUserModal({
                                 </button>
                                 <button
                                     className={`flex-1 py-3 rounded-lg border text-sm font-medium transition-colors ${formData.tipo === "FUNCIONARIO"
-                                            ? "bg-[#4A90A4] border-[#4A90A4] text-white"
-                                            : "bg-gray-50 border-gray-200 text-gray-600"
+                                        ? "bg-[#4A90A4] border-[#4A90A4] text-white"
+                                        : "bg-gray-50 border-gray-200 text-gray-600"
                                         }`}
                                     onClick={() => setFormData(prev => ({ ...prev, tipo: "FUNCIONARIO" }))}
                                 >

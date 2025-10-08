@@ -99,43 +99,6 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
     }
   };
 
-  const renderUserItem = (item: UsuarioCompleto) => (
-    <div className="bg-gray-50 rounded-lg p-4 mb-3 flex items-center justify-between border border-gray-200 shadow-sm">
-      <div className="flex flex-1">
-        <div className="flex-1 pr-2">
-          <div className="text-xs font-semibold text-gray-600 mb-1">Identificador</div>
-          <div className="text-sm text-gray-800 font-medium">{item.identificador}</div>
-        </div>
-
-        <div className="flex-1 pr-2">
-          <div className="text-xs font-semibold text-gray-600 mb-1">Nome</div>
-          <div className="text-sm text-gray-800 font-medium">{item.nome}</div>
-        </div>
-
-        <div className="flex-1 pr-2">
-          <div className="text-xs font-semibold text-gray-600 mb-1">Tipo</div>
-          <div className="text-sm text-gray-800 font-medium">{item.tipo}</div>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <button
-          className="w-9 h-9 flex items-center justify-center rounded-md hover:bg-gray-100 transition-colors"
-          onClick={() => handleEditUser(item.id)}
-        >
-          <span className="text-base">✏️</span>
-        </button>
-
-        <button
-          className="w-9 h-9 flex items-center justify-center rounded-md hover:bg-gray-100 transition-colors"
-          onClick={() => handleDeleteUser(item.id, item.nome)}
-        >
-          <span className="text-base">❌</span>
-        </button>
-      </div>
-    </div>
-  );
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -150,62 +113,100 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header onLogout={handleLogout} pageName="Gerenciador de Usuários" user={user} />
-      <MenuNavigation currentPath="/admin/user-management" />
+    <div className="min-h-screen bg-gray-50 relative">
+      {/* Aplica blur apenas no conteúdo quando modal estiver aberto */}
+      <div className={showAddModal ? 'blur-xs' : ''}>
+        <Header onLogout={handleLogout} pageName="Gerenciador de Usuários" user={user} />
+        <MenuNavigation currentPath="/admin/user-management" />
 
-      <div className="flex-1 p-4">
-        {/* Search Bar */}
-        <div className="flex items-center bg-white rounded-lg px-3 mb-4 shadow-sm border">
-          <input
-            type="text"
-            className="flex-1 h-12 text-base text-gray-800 outline-none"
-            placeholder="Pesquise por nome ou identificador"
-            value={searchText}
-            onChange={(e) => filterUsers(e.target.value)}
-          />
+        <div className="flex-1 p-4">
+          {/* Search Bar */}
+          <div className="flex items-center bg-white rounded-lg px-3 mb-4 shadow-sm border">
+            <input
+              type="text"
+              className="flex-1 h-12 text-base text-gray-800 outline-none"
+              placeholder="Pesquise por nome ou identificador"
+              value={searchText}
+              onChange={(e) => filterUsers(e.target.value)}
+            />
+            <button 
+              className="p-2"
+              onClick={() => filterUsers(searchText)}
+            >
+              <span className="text-xl">🔍</span>
+            </button>
+          </div>
+
+          {/* Users List */}
+          <div className="bg-white rounded-lg p-4 mb-4 shadow-sm border">
+            {filteredUsers.length === 0 ? (
+              <div className="flex flex-col items-center justify-center p-10">
+                <div className="text-base text-gray-600 text-center">
+                  {searchText
+                    ? "Nenhum usuário encontrado"
+                    : "Nenhum usuário cadastrado"}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+                {filteredUsers.map((user) => (
+                  <div key={user.id} className="bg-gray-50 rounded-lg p-4 mb-3 flex items-center justify-between border border-gray-200 shadow-sm">
+                    <div className="flex flex-1">
+                      <div className="flex-1 pr-2">
+                        <div className="text-xs font-semibold text-gray-600 mb-1">Identificador</div>
+                        <div className="text-sm text-gray-800 font-medium">{user.identificador}</div>
+                      </div>
+
+                      <div className="flex-1 pr-2">
+                        <div className="text-xs font-semibold text-gray-600 mb-1">Nome</div>
+                        <div className="text-sm text-gray-800 font-medium">{user.nome}</div>
+                      </div>
+
+                      <div className="flex-1 pr-2">
+                        <div className="text-xs font-semibold text-gray-600 mb-1">Tipo</div>
+                        <div className="text-sm text-gray-800 font-medium">{user.tipo}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="w-9 h-9 flex items-center justify-center rounded-md hover:bg-gray-100 transition-colors"
+                        onClick={() => handleEditUser(user.id)}
+                      >
+                        <span className="text-base">✏️</span>
+                      </button>
+
+                      <button
+                        className="w-9 h-9 flex items-center justify-center rounded-md hover:bg-gray-100 transition-colors"
+                        onClick={() => handleDeleteUser(user.id, user.nome)}
+                      >
+                        <span className="text-base">❌</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <button 
-            className="p-2"
-            onClick={() => filterUsers(searchText)}
+            className="fixed bottom-5 right-5 bg-black rounded-full w-15 h-15 flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow"
+            onClick={handleAddUser}
           >
-            <span className="text-xl">🔍</span>
+            <span className="text-2xl text-white font-bold">+</span>
           </button>
         </div>
 
-        {/* Users List */}
-        <div className="bg-white rounded-lg p-4 mb-4 shadow-sm border">
-          {filteredUsers.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-10">
-              <div className="text-base text-gray-600 text-center">
-                {searchText
-                  ? "Nenhum usuário encontrado"
-                  : "Nenhum usuário cadastrado"}
-              </div>
+        {showDeleteSuccess && (
+          <div className="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-red-500 rounded-lg px-4 py-3 shadow-lg">
+            <div className="text-white font-bold text-center text-sm">
+              Usuário excluído com sucesso!
             </div>
-          ) : (
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-              {filteredUsers.map((user) => renderUserItem(user))}
-            </div>
-          )}
-        </div>
-
-        <button 
-          className="fixed bottom-5 right-5 bg-black rounded-full w-15 h-15 flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow"
-          onClick={handleAddUser}
-        >
-          <span className="text-2xl text-white font-bold">+</span>
-        </button>
+          </div>
+        )}
       </div>
 
-      {showDeleteSuccess && (
-        <div className="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-red-500 rounded-lg px-4 py-3 shadow-lg">
-          <div className="text-white font-bold text-center text-sm">
-            Usuário excluído com sucesso!
-          </div>
-        </div>
-      )}
-
-      {/* Add User Modal */}
+      {/* Add User Modal - fora da div com blur */}
       <AddUserModal
         visible={showAddModal}
         onClose={() => {
