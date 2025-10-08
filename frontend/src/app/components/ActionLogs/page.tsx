@@ -6,6 +6,8 @@ import { LogAction, UsuarioCompleto } from "../../services/database-service";
 import { databaseService } from "../../services/database-service";
 import Header from "../Header";
 import MenuNavigation from "../MenuNavigation";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 interface ActionLogsProps {
   onLogout?: () => void;
@@ -29,6 +31,7 @@ export default function ActionLogs({ onLogout, user }: ActionLogsProps) {
   const [limit, setLimit] = useState<number>(100);
   const [offset, setOffset] = useState<number>(0);
   const [showFilters, setShowFilters] = useState<boolean>(false);
+  const [generatingPDF, setGeneratingPDF] = useState<boolean>(false);
 
   // Opções para o select de ações
   const acoesOptions = [
@@ -98,18 +101,138 @@ export default function ActionLogs({ onLogout, user }: ActionLogsProps) {
     }
   };
 
-  // Filtro local para busca em tempo real
-  const filteredLogs = logs.filter((log) => {
-    if (!filtros.searchTerm) return true;
+  const handleGeneratePDF = async () => {
+  if (filteredLogs.length === 0) {
+    alert("Não há dados para exportar");
+    return;
+  }
 
-    const searchTerm = filtros.searchTerm.toLowerCase();
-    return (
-      log.nome_usuario.toLowerCase().includes(searchTerm) ||
-      log.acao.toLowerCase().includes(searchTerm) ||
-      log.status.toLowerCase().includes(searchTerm) ||
-      (log.detalhes && log.detalhes.toLowerCase().includes(searchTerm))
-    );
-  });
+  setGeneratingPDF(true);
+  try {
+    // Criar novo documento PDF
+    const doc = new jsPDF();
+    
+    // Adicionar título
+    doc.setFontSize(16);
+    doc.setTextColor(44, 95, 105); // #2C5F69
+    doc.text("Relatório de Logs de Ações - FATEC", 14, 15);
+    
+    // Adicionar informações dos filtros aplicados
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    
+    let yPosition = 25;
+    
+    // Informações de data/hora da geração
+    const now = new Date();
+    doc.text(`Relatório gerado em: ${now.toLocaleString('pt-BR')}`, 14, yPosition);
+    yPosition += 5;
+    
+    // Filtros aplicados
+    doc.text("Filtros aplicados:", 14, yPosition);
+    yPosition += 5;
+    
+    if (filtros.searchTerm) {
+      doc.text(`• Pesquisa: "${filtros.searchTerm}"`, 20, yPosition);
+      yPosition += 4;
+    }
+    
+    if (filtros.dataInicio) {
+      doc.text(`• Data início: ${filtros.dataInicio}`, 20, yPosition);
+      yPosition += 4;
+    }
+    
+    if (filtros.dataFim) {
+      doc.text(`• Data fim: ${filtros.dataFim}`, 20, yPosition);
+      yPosition += 4;
+    }
+    
+    if (filtros.acao) {
+      doc.text(`• Ação: ${filtros.acao}`, 20, yPosition);
+      yPosition += 4;
+    }
+
+    if (filtros.usuario_id) {
+      doc.text(`• ID do usuário: ${filtros.usuario_id}`, 20, yPosition);
+      yPosition += 4;
+    }
+    
+    // Total de registros
+    doc.text(`• Total de registros: ${filteredLogs.length}`, 20, yPosition);
+    yPosition += 8;
+
+    // Preparar dados da tabela - CORREÇÃO: lidar com valores nulos
+    const tableData = filteredLogs.map((log, index) => [
+      (index + 1).toString(),
+      log.nome_usuario || 'N/A',
+      formatDateTime(log.data_hora),
+      log.acao || 'N/A',
+      log.status || 'N/A',
+      log.detalhes || 'N/A'
+    ]);
+
+    // Adicionar tabela
+    autoTable(doc, {
+      head: [['#', 'Usuário', 'Data/Hora', 'Ação', 'Status', 'Detalhes']],
+      body: tableData,
+      startY: yPosition + 5,
+      styles: {
+        fontSize: 8,
+        cellPadding: 2,
+      },
+      headStyles: {
+        fillColor: [44, 95, 105], // #2C5F69
+        textColor: 255,
+        fontStyle: 'bold'
+      },
+      alternateRowStyles: {
+        fillColor: [240, 240, 240]
+      },
+      columnStyles: {
+        0: { cellWidth: 10 }, // #
+        1: { cellWidth: 30 }, // Usuário
+        2: { cellWidth: 35 }, // Data/Hora
+        3: { cellWidth: 35 }, // Ação
+        4: { cellWidth: 20 }, // Status
+        5: { cellWidth: 60 }, // Detalhes
+      },
+      margin: { top: 10 },
+      didDrawPage: function (data) {
+        // Adicionar número da página
+        const pageCount = doc.getNumberOfPages();
+        doc.setFontSize(8);
+        doc.text(
+          `Página ${data.pageNumber} de ${pageCount}`,
+          doc.internal.pageSize.getWidth() / 2,
+          doc.internal.pageSize.getHeight() - 10,
+          { align: 'center' }
+        );
+      }
+    });
+
+    // Salvar o PDF
+    const fileName = `logs_acoes_${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours()}${now.getMinutes()}.pdf`;
+    doc.save(fileName);
+
+  } catch (error) {
+    console.error("Erro ao gerar PDF:", error);
+    alert("Não foi possível gerar o PDF");
+  } finally {
+    setGeneratingPDF(false);
+  }
+};
+  // Filtro local para busca em tempo real - CORREÇÃO
+const filteredLogs = logs.filter((log) => {
+  if (!filtros.searchTerm) return true;
+
+  const searchTerm = filtros.searchTerm.toLowerCase();
+  return (
+    (log.nome_usuario || '').toLowerCase().includes(searchTerm) ||
+    (log.acao || '').toLowerCase().includes(searchTerm) ||
+    (log.status || '').toLowerCase().includes(searchTerm) ||
+    (log.detalhes && log.detalhes.toLowerCase().includes(searchTerm))
+  );
+});
 
   const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
@@ -258,11 +381,32 @@ export default function ActionLogs({ onLogout, user }: ActionLogsProps) {
           )}
         </div>
 
-        {/* Results Info */}
+        {/* Results Info and PDF Button */}
         <div className="flex justify-between items-center mb-4">
           <span className="text-gray-600 text-sm">
             {filteredLogs.length} log{filteredLogs.length !== 1 ? "s" : ""} encontrado{filteredLogs.length !== 1 ? "s" : ""}
           </span>
+
+          <button
+            className={`flex items-center px-4 py-2 rounded text-sm font-medium ${
+              generatingPDF || filteredLogs.length === 0
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-red-600 hover:bg-red-700"
+            } text-white transition-colors`}
+            onClick={handleGeneratePDF}
+            disabled={generatingPDF || filteredLogs.length === 0}
+          >
+            {generatingPDF ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                Gerando PDF...
+              </>
+            ) : (
+              <>
+                📄 Exportar PDF
+              </>
+            )}
+          </button>
         </div>
 
         {/* Logs List - CORRIGIDO: Estrutura de scroll */}
