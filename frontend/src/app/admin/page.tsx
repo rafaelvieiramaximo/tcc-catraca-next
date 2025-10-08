@@ -1,19 +1,17 @@
-// app/admin/page.tsx
+// app/admin/user-management/page.tsx
 'use client';
 
 import { useAppAuth } from '../contexts/app-auth-context';
-import Menu from '../components/Menu';
+import UserManagement from '../components/UserManagement/page';
 import LoadingScreen from '../components/loadingScreen';
 
-export default function AdminPage() {
+export default function UserManagementPage() {
   const { currentUser, handleLogout, loading } = useAppAuth();
 
-  // Mostra loading enquanto verifica autenticação
   if (loading) {
     return <LoadingScreen />;
   }
 
-  // Se não há usuário após o loading, mostra erro
   if (!currentUser) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
@@ -28,5 +26,5 @@ export default function AdminPage() {
     );
   }
 
-  return <Menu user={currentUser} onLogout={handleLogout} />;
+  return <UserManagement user={currentUser} onLogout={handleLogout} />;
 }
