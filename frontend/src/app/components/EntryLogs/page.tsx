@@ -164,8 +164,8 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
         <MenuNavigation currentPath="/entry-logs" />
       )}
 
-      {/* Content Area */}
-      <div className="flex-1 p-6 max-w-7xl mx-auto w-full">
+      {/* Content Area - CORRIGIDO: Adicionado flex-col */}
+      <div className="flex-1 flex flex-col p-6 max-w-7xl mx-auto w-full">
         {/* Search and Filters Section */}
         <div className="mb-4">
           <div className="flex items-center bg-white rounded-lg shadow-sm px-4 py-2">
@@ -281,92 +281,94 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
           </button>
         </div>
 
-        {/* Logs List */}
+        {/* Logs List - CORRIGIDO: Estrutura de scroll igual ao ActionLogs */}
         {loading && offset === 0 ? (
           <div className="flex flex-col items-center justify-center min-h-[200px]">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#4A90A4]"></div>
             <span className="mt-4 text-gray-600">Carregando logs...</span>
           </div>
         ) : (
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-            <div className="max-h-[60vh] overflow-y-auto">
-              {filteredLogs.length > 0 ? (
-                <div className="p-4">
-                  {filteredLogs.map((item) => (
-                    <div key={`${item.id}-${item.created_at}`} className="bg-white rounded-lg shadow-sm p-4 mb-3 border border-gray-200">
-                      {/* Log Header */}
-                      <div className="flex justify-between items-center border-b border-gray-200 pb-2 mb-3">
-                        <div className="flex items-center space-x-2 flex-wrap">
-                          <span className="text-sm font-semibold text-[#4A90A4]">
-                            #{item.usuario_id}
-                          </span>
-                          <span className="text-base font-semibold text-gray-800">
-                            {item.nome}
-                          </span>
+          <div className="flex-1 flex flex-col min-h-0"> {/* CORRIGIDO: Container flexível */}
+            <div className="bg-white rounded-lg shadow-sm flex-1 flex flex-col min-h-0"> {/* CORRIGIDO: Flex container */}
+              <div className="flex-1 overflow-y-auto"> {/* CORRIGIDO: Scroll area */}
+                {filteredLogs.length > 0 ? (
+                  <div className="p-4">
+                    {filteredLogs.map((item) => (
+                      <div key={`${item.id}-${item.created_at}`} className="bg-white rounded-lg shadow-sm p-4 mb-3 border border-gray-200">
+                        {/* Log Header */}
+                        <div className="flex justify-between items-center border-b border-gray-200 pb-2 mb-3">
+                          <div className="flex items-center space-x-2 flex-wrap">
+                            <span className="text-sm font-semibold text-[#4A90A4]">
+                              {item.identificador}
+                            </span>
+                            <span className="text-base font-semibold text-gray-800">
+                              {item.nome}
+                            </span>
+                          </div>
+                          <div>
+                            <span className={`text-sm font-semibold ${getControleStyle(item)}`}>
+                              {controle(item)}
+                            </span>
+                          </div>
                         </div>
-                        <div>
-                          <span className={`text-sm font-semibold ${getControleStyle(item)}`}>
-                            {controle(item)}
-                          </span>
+
+                        {/* Log Details */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="flex justify-between">
+                            <span className="text-sm text-gray-600 font-medium">Tipo:</span>
+                            <span className="text-sm text-gray-800">{item.tipo}</span>
+                          </div>
+
+                          <div className="flex justify-between">
+                            <span className="text-sm text-gray-600 font-medium">Data:</span>
+                            <span className="text-sm text-gray-800">{formatDate(item.data_entrada)}</span>
+                          </div>
+
+                          <div className="flex justify-between">
+                            <span className="text-sm text-gray-600 font-medium">Horário:</span>
+                            <span className="text-sm text-gray-800">{formatTime(item.horario)}</span>
+                          </div>
+
+                          <div className="flex justify-between">
+                            <span className="text-sm text-gray-600 font-medium">Período:</span>
+                            <span className="text-sm text-gray-800">{item.periodo}</span>
+                          </div>
                         </div>
                       </div>
+                    ))}
 
-                      {/* Log Details */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="flex justify-between">
-                          <span className="text-sm text-gray-600 font-medium">Tipo:</span>
-                          <span className="text-sm text-gray-800">{item.tipo}</span>
-                        </div>
-
-                        <div className="flex justify-between">
-                          <span className="text-sm text-gray-600 font-medium">Data:</span>
-                          <span className="text-sm text-gray-800">{formatDate(item.data_entrada)}</span>
-                        </div>
-
-                        <div className="flex justify-between">
-                          <span className="text-sm text-gray-600 font-medium">Horário:</span>
-                          <span className="text-sm text-gray-800">{formatTime(item.horario)}</span>
-                        </div>
-
-                        <div className="flex justify-between">
-                          <span className="text-sm text-gray-600 font-medium">Período:</span>
-                          <span className="text-sm text-gray-800">{item.periodo}</span>
-                        </div>
+                    {/* Load More */}
+                    {loading && offset > 0 && (
+                      <div className="flex justify-center items-center p-4">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#4A90A4] mr-2"></div>
+                        <span className="text-gray-600 text-sm">Carregando mais...</span>
                       </div>
-                    </div>
-                  ))}
+                    )}
 
-                  {/* Load More */}
-                  {loading && offset > 0 && (
-                    <div className="flex justify-center items-center p-4">
-                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#4A90A4] mr-2"></div>
-                      <span className="text-gray-600 text-sm">Carregando mais...</span>
-                    </div>
-                  )}
-
-                  {/* Load More Button */}
-                  {!loading && logs.length >= limit && (
-                    <div className="flex justify-center mt-4">
-                      <button
-                        onClick={loadMore}
-                        className="bg-[#4A90A4] hover:bg-[#3A7A8C] text-white px-4 py-2 rounded text-sm font-medium"
-                      >
-                        Carregar Mais
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center p-8 text-gray-500">
-                  <span className="text-4xl mb-4">📋</span>
-                  <span className="text-lg font-semibold text-gray-600 mb-2 text-center">
-                    Nenhum log encontrado
-                  </span>
-                  <span className="text-center text-gray-500">
-                    Tente ajustar os filtros ou verificar se existem registros para o período selecionado.
-                  </span>
-                </div>
-              )}
+                    {/* Load More Button */}
+                    {!loading && logs.length >= limit && (
+                      <div className="flex justify-center mt-4">
+                        <button
+                          onClick={loadMore}
+                          className="bg-[#4A90A4] hover:bg-[#3A7A8C] text-white px-4 py-2 rounded text-sm font-medium"
+                        >
+                          Carregar Mais
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center p-8 text-gray-500 h-full">
+                    <span className="text-4xl mb-4">📋</span>
+                    <span className="text-lg font-semibold text-gray-600 mb-2 text-center">
+                      Nenhum log encontrado
+                    </span>
+                    <span className="text-center text-gray-500">
+                      Tente ajustar os filtros ou verificar se existem registros para o período selecionado.
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

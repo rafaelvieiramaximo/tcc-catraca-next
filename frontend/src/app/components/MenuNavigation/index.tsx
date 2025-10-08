@@ -1,3 +1,4 @@
+// components/MenuNavigation/index.tsx
 'use client';
 
 import { useRouter } from 'next/navigation';
@@ -23,19 +24,17 @@ export default function MenuNavigation({ currentPath }: MenuNavigationProps) {
   return (
     <div className="flex bg-[#C41E3A] px-5 py-3">
       {navItems.map((item) => (
-        // ...existing code...
         <button
           key={item.label}
-          className={`mr-8 px-3 py-2 text-white text-xs font-semibold tracking-wide transition-colors duration-200 ease-in-out transform ${
-            isActive(item.path)
-              ? 'bg-gray-950 bg-opacity-20 rounded'
-              : 'hover:bg-red-400 rounded cursor-pointer hover:scale-105'
+          className={`mr-8 px-3 py-2 text-white text-xs font-semibold tracking-wide transition-colors ${
+            isActive(item.path) 
+              ? 'bg-gray-800 bg-opacity-20 rounded' 
+              : 'hover:bg-red-400 hover:bg-opacity-10 rounded'
           }`}
           onClick={() => router.push(item.path)}
         >
           {item.label}
         </button>
-        // ...existing code...
       ))}
     </div>
   );

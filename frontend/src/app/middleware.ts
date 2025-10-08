@@ -4,28 +4,40 @@ import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
   // Verificar se o usuário está autenticado
-  const currentUser = request.cookies.get('currentUser')?.value;
+  const currentUser = request.cookies.get('fatec-portaria-user')?.value;
 
-  if (!currentUser) {
-    // Se não está autenticado e não está na página de login, redireciona
-    if (!request.nextUrl.pathname.startsWith('/login')) {
-      return NextResponse.redirect(new URL('/', request.url));
+  // Se não está autenticado e tenta acessar rotas protegidas
+  if (!currentUser && 
+      (request.nextUrl.pathname.startsWith('/admin') || 
+       request.nextUrl.pathname.startsWith('/portaria') ||
+       request.nextUrl.pathname.startsWith('/entry-logs'))) {
+    return NextResponse.redirect(new URL('/', request.url));
+  }
+
+  // Se está autenticado, verificar tipo de usuário
+  if (currentUser) {
+    try {
+      const user = JSON.parse(currentUser);
+      const isAdmin = user.tipo === 'ADMIN';
+      const isPortaria = user.tipo === 'PORTARIA';
+
+      // ADMIN tentando acessar rotas da PORTARIA
+      if (isAdmin && request.nextUrl.pathname.startsWith('/portaria')) {
+        return NextResponse.redirect(new URL('/admin', request.url));
+      }
+
+      // PORTARIA tentando acessar rotas do ADMIN
+      if (isPortaria && request.nextUrl.pathname.startsWith('/admin')) {
+        return NextResponse.redirect(new URL('/portaria', request.url));
+      }
+
+    } catch (error) {
+      // Se houver erro ao parsear o usuário, redireciona para login
+      const response = NextResponse.redirect(new URL('/', request.url));
+      response.cookies.delete('fatec-portaria-user');
+      response.cookies.delete('fatec-portaria-auth');
+      return response;
     }
-    return NextResponse.next();
-  }
-
-  // Parse do usuário
-  const user = JSON.parse(currentUser);
-  const isAdmin = user.tipo === 'ADMIN';
-  const isPortaria = user.tipo === 'PORTARIA';
-
-  // Proteção de rotas por tipo de usuário
-  if (request.nextUrl.pathname.startsWith('/admin') && !isAdmin) {
-    return NextResponse.redirect(new URL('/portaria', request.url));
-  }
-
-  if (request.nextUrl.pathname.startsWith('/portaria') && !isPortaria) {
-    return NextResponse.redirect(new URL('/admin', request.url));
   }
 
   return NextResponse.next();

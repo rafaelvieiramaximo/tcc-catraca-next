@@ -1,5 +1,10 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+'use client';
 
+import { useState, useEffect } from "react";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001/api';
+
+// Tipos para os usuários do sistema
 export type TipoUsuario = 'PORTARIA' | 'ADMIN';
 export type TipoS = 'ESTUDANTE' | 'FUNCIONARIO';
 
@@ -12,11 +17,29 @@ export interface Usuario {
   updated_at: string;
   imagem_atualizada_em?: string;
   tem_imagem?: boolean;
+  imagem_base64?: string | null;
+}
+
+export interface NovoUsuarioSystem {
+  nome: string;
+  tipo: string;
+  identificador: string;
+  senha: string;
   imagem_base64?: string;
 }
 
-export interface UsuarioCompleto extends Usuario {
-  senha_hash?: string;
+export interface NovoUsuario {
+  nome: string;
+  tipo: TipoS | TipoUsuario;
+  identificador: string;
+  imagem_base64?: string;
+}
+
+interface FiltrosLogEntrada {
+  hoje?: boolean;
+  usuario_id?: number;
+  periodo?: string;
+  tipo?: string;
 }
 
 export interface LogEntrada {
@@ -32,6 +55,36 @@ export interface LogEntrada {
   controle: boolean;
 }
 
+interface FiltrosLogAction {
+  usuario_id?: number;
+  acao?: string;
+  data_acao?: string;
+}
+
+export interface LogAction {
+  id_log: number;
+  id_usuario: number;
+  data_acao: string;
+  data_hora: string;
+  acao: string;
+  status: string;
+  detalhes?: string;
+  created_at: string;
+  nome_usuario: string;
+}
+
+export interface UsuarioCompleto extends Usuario {
+  senha_hash?: string;
+}
+
+// Interface para resposta de operações com imagem
+interface ImageOperationResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
+// Classe principal do serviço de banco de dados
 class DatabaseService {
   private baseUrl: string;
 
@@ -61,6 +114,75 @@ class DatabaseService {
     }
   }
 
+  // ==================== FUNÇÕES AUXILIARES PARA IMAGENS ====================
+
+  /**
+   * Valida se a string base64 é uma imagem válida
+   */
+  isValidBase64Image(base64String: string): boolean {
+    if (!base64String) return false;
+    
+    try {
+      // Remove o prefixo data URL se existir
+      const base64Data = base64String.replace(/^data:image\/\w+;base64,/, '');
+      
+      // Verifica se é base64 válido
+      const regex = /^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?$/;
+      if (!regex.test(base64Data)) {
+        return false;
+      }
+
+      // Calcula tamanho aproximado em bytes (base64 é ~33% maior que o original)
+      const stringLength = base64Data.length;
+      const sizeInBytes = 4 * Math.ceil(stringLength / 3) * 0.5624896334383812;
+      
+      // Verifica se é menor que 5MB
+      return sizeInBytes <= 5 * 1024 * 1024;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * Converte um arquivo File para base64 (para uploads no navegador)
+   */
+  async fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = () => {
+        const base64 = reader.result as string;
+        resolve(base64);
+      };
+      
+      reader.onerror = (error) => {
+        reject(new Error('Falha ao ler arquivo: ' + error));
+      };
+      
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /**
+   * Processa imagem do input file para base64
+   */
+  async processImageForUpload(file: File): Promise<string> {
+    try {
+      const base64String = await this.fileToBase64(file);
+      
+      if (!this.isValidBase64Image(base64String)) {
+        throw new Error('Imagem inválida ou muito grande (máximo 5MB)');
+      }
+      
+      return base64String;
+    } catch (error) {
+      console.error('Erro ao processar imagem:', error);
+      throw error;
+    }
+  }
+
+  // ==================== AUTENTICAÇÃO ====================
+
   async authenticateUser(identificador: string, senha: string, tipo: TipoUsuario): Promise<UsuarioCompleto | null> {
     try {
       const response = await this.makeRequest('/auth/login', {
@@ -79,7 +201,217 @@ class DatabaseService {
     }
   }
 
-  async getLogsEntrada(limit: number = 100, offset: number = 0, filtros: any = {}): Promise<LogEntrada[]> {
+  // ==================== OPERAÇÕES COM IMAGENS ====================
+
+  /**
+   * Faz upload da imagem de um usuário
+   */
+  async uploadUserImage(userId: number, imageBase64: string): Promise<ImageOperationResponse> {
+    try {
+      if (!this.isValidBase64Image(imageBase64)) {
+        return {
+          success: false,
+          error: 'Imagem inválida ou muito grande (máximo 5MB)'
+        };
+      }
+
+      const response = await this.makeRequest(`/users/${userId}/image`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          imagem_base64: imageBase64
+        }),
+      });
+
+      return {
+        success: true,
+        message: response.message || 'Imagem atualizada com sucesso'
+      };
+    } catch (error) {
+      console.error('Upload image error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao fazer upload da imagem'
+      };
+    }
+  }
+
+  /**
+   * Obtém a URL direta para a imagem do usuário
+   */
+  getUserImageUrl(userId: number): string {
+    return `${this.baseUrl}/users/${userId}/image`;
+  }
+
+  /**
+   * Obtém a imagem do usuário em base64
+   */
+  async getUserImageBase64(userId: number): Promise<string | null> {
+    try {
+      const response = await this.makeRequest(`/users/${userId}?incluir_imagem=true`);
+      return response.user?.imagem_base64 || null;
+    } catch (error) {
+      console.error('Get user image base64 error:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Remove a imagem do usuário
+   */
+  async deleteUserImage(userId: number): Promise<ImageOperationResponse> {
+    try {
+      const response = await this.makeRequest(`/users/${userId}/image`, {
+        method: 'DELETE',
+      });
+
+      return {
+        success: true,
+        message: response.message || 'Imagem removida com sucesso'
+      };
+    } catch (error) {
+      console.error('Delete image error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao remover imagem'
+      };
+    }
+  }
+
+  // ==================== USUÁRIOS ====================
+
+  async getAllUsers(): Promise<UsuarioCompleto[]> {
+    try {
+      const response = await this.makeRequest('/users');
+      return response.users || [];
+    } catch (error) {
+      console.error('Get all users error:', error);
+      return [];
+    }
+  }
+
+  async getUserById(id: number, incluirImagem: boolean = false): Promise<UsuarioCompleto | null> {
+    try {
+      const endpoint = incluirImagem ? `/users/${id}?incluir_imagem=true` : `/users/${id}`;
+      const response = await this.makeRequest(endpoint);
+      return response.user || null;
+    } catch (error) {
+      console.error('Get user by id error:', error);
+      return null;
+    }
+  }
+
+  async createUser(userData: NovoUsuario): Promise<{ success: boolean; userId?: number; error?: string }> {
+    try {
+      // Validar imagem se for fornecida
+      if (userData.imagem_base64 && !this.isValidBase64Image(userData.imagem_base64)) {
+        return {
+          success: false,
+          error: 'Imagem inválida ou muito grande (máximo 5MB)'
+        };
+      }
+
+      const response = await this.makeRequest('/users', {
+        method: 'POST',
+        body: JSON.stringify(userData),
+      });
+
+      return {
+        success: true,
+        userId: response.userId
+      };
+    } catch (error) {
+      console.error('Create user error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao criar usuário'
+      };
+    }
+  }
+
+  async updateUser(id: number, userData: Partial<UsuarioCompleto & { imagem_base64?: string | null }>): Promise<{ success: boolean; user?: UsuarioCompleto; error?: string }> {
+    try {
+      // Validar imagem se for fornecida (permitir null para remover)
+      if (userData.imagem_base64 !== undefined && 
+          userData.imagem_base64 !== null && 
+          !this.isValidBase64Image(userData.imagem_base64)) {
+        return {
+          success: false,
+          error: 'Imagem inválida ou muito grande (máximo 5MB)'
+        };
+      }
+
+      const response = await this.makeRequest(`/users/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(userData),
+      });
+
+      return {
+        success: true,
+        user: response.user
+      };
+    } catch (error) {
+      console.error('Update user error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao atualizar usuário'
+      };
+    }
+  }
+
+  async deleteUser(id: number): Promise<{ success: boolean; error?: string }> {
+    try {
+      await this.makeRequest(`/users/${id}`, {
+        method: 'DELETE',
+      });
+
+      return { success: true };
+    } catch (error) {
+      console.error('Delete user error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao deletar usuário'
+      };
+    }
+  }
+
+  async adicionarUsuario(usuario: NovoUsuarioSystem): Promise<{ success: boolean; userId?: number; error?: string }> {
+    try {
+      // Validar imagem se for fornecida
+      if (usuario.imagem_base64 && !this.isValidBase64Image(usuario.imagem_base64)) {
+        return {
+          success: false,
+          error: 'Imagem inválida ou muito grande (máximo 5MB)'
+        };
+      }
+
+      const isSystemUser = usuario.tipo === 'ADMIN' || usuario.tipo === 'PORTARIA';
+      const path = isSystemUser ? '/users/system' : '/users';
+
+      const response = await this.makeRequest(path, {
+        method: 'POST',
+        body: JSON.stringify(usuario),
+      });
+
+      return {
+        success: true,
+        userId: response.userId
+      };
+    } catch (error) {
+      console.error('Adicionar usuario error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao criar usuário'
+      };
+    }
+  }
+
+  // ================= LOG ENTRADA ========================
+
+  async getLogsEntrada(
+    limit: number = 100,
+    offset: number = 0,
+    filtros: FiltrosLogEntrada = {}
+  ): Promise<LogEntrada[]> {
     try {
       const params: Record<string, string> = {
         limit: limit.toString(),
@@ -106,67 +438,166 @@ class DatabaseService {
     }
   }
 
-  async getUserById(id: number, incluirImagem: boolean = false): Promise<UsuarioCompleto | null> {
-    try {
-      const endpoint = incluirImagem ? `/users/${id}?incluir_imagem=true` : `/users/${id}`;
-      const response = await this.makeRequest(endpoint);
-      return response.user || null;
-    } catch (error) {
-      console.error('Get user by id error:', error);
-      return null;
-    }
-  }
+  // ==================== LOG AÇÃO ====================
 
-  // Outros métodos que você pode precisar depois
-  async getAllUsers(): Promise<UsuarioCompleto[]> {
+  async getActionLogs(
+    limit: number = 100,
+    offset: number = 0,
+    filtros: FiltrosLogAction = {}
+  ): Promise<LogAction[]> {
     try {
-      const response = await this.makeRequest('/users');
-      return response.users || [];
+      const params: Record<string, string> = {
+        limit: limit.toString(),
+        offset: offset.toString()
+      };
+
+      if (filtros.usuario_id) params.usuario_id = filtros.usuario_id.toString();
+      if (filtros.acao) params.acao = filtros.acao;
+      if (filtros.data_acao) params.data_acao = filtros.data_acao;
+
+      const queryParams = new URLSearchParams(params).toString();
+      const url = `/logs/action?${queryParams}`;
+
+      const response = await this.makeRequest(url, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      return response.logs || [];
     } catch (error) {
-      console.error('Get all users error:', error);
+      console.error('Get action logs error:', error);
       return [];
     }
   }
 
-  async createUser(userData: any): Promise<any> {
-    return this.makeRequest('/users', {
-      method: 'POST',
-      body: JSON.stringify(userData),
-    });
-  }
+  // ==================== CRIAR LOG AÇÃO ====================
 
-  async updateUser(id: number, userData: any): Promise<any> {
-    return this.makeRequest(`/users/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(userData),
-    });
-  }
-
-  async deleteUser(id: number): Promise<boolean> {
-    try {
-      await this.makeRequest(`/users/${id}`, {
-        method: 'DELETE',
-      });
-      return true;
-    } catch (error) {
-      console.error('Delete user error:', error);
-      return false;
-    }
-  }
-
-  async createActionLog(logData: any): Promise<boolean> {
+  async createActionLog(logData: {
+    id_usuario?: number;
+    identificador?: string;
+    acao: string;
+    status: string;
+    detalhes?: string;
+    nome_usuario?: string;
+  }): Promise<boolean> {
     try {
       const response = await this.makeRequest('/logs/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(logData),
       });
+
       return response.success === true;
     } catch (error) {
       console.error('Create action log error:', error);
       return false;
     }
   }
+
+  // ==================== HEALTH CHECK ====================
+
+  async healthCheck(): Promise<{ success: boolean; message?: string; error?: string }> {
+    try {
+      const response = await this.makeRequest('/health');
+      return {
+        success: true,
+        message: response.message
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: 'Servidor indisponível'
+      };
+    }
+  }
+
+  // ==================== MÉTODOS ADICIONAIS PARA WEB ====================
+
+  /**
+   * Verifica se o servidor está online
+   */
+  async isServerOnline(): Promise<boolean> {
+    try {
+      await this.healthCheck();
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * Obtém estatísticas do sistema
+   */
+  async getSystemStats(): Promise<{
+    totalUsers: number;
+    totalEntriesToday: number;
+    onlineUsers: number;
+  }> {
+    try {
+      const response = await this.makeRequest('/stats');
+      return response;
+    } catch (error) {
+      console.error('Get system stats error:', error);
+      return {
+        totalUsers: 0,
+        totalEntriesToday: 0,
+        onlineUsers: 0
+      };
+    }
+  }
 }
 
+// Instância única do serviço
 export const databaseService = new DatabaseService();
+
+// Funções auxiliares para uso em componentes
+
+/**
+ * Hook para verificar se o servidor está online
+ */
+export const useServerStatus = () => {
+  const [isOnline, setIsOnline] = useState<boolean>(true);
+
+  useEffect(() => {
+    const checkServerStatus = async () => {
+      const online = await databaseService.isServerOnline();
+      setIsOnline(online);
+    };
+
+    checkServerStatus();
+    const interval = setInterval(checkServerStatus, 30000); // Verifica a cada 30 segundos
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return isOnline;
+};
+
+/**
+ * Hook para dados do usuário com cache
+ */
+export const useUserData = (userId: number, includeImage: boolean = false) => {
+  const [user, setUser] = useState<UsuarioCompleto | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        setLoading(true);
+        const userData = await databaseService.getUserById(userId, includeImage);
+        setUser(userData);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Erro ao carregar usuário');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (userId) {
+      fetchUser();
+    }
+  }, [userId, includeImage]);
+
+  return { user, loading, error };
+};
