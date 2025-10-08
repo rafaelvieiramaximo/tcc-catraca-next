@@ -11,7 +11,16 @@ interface HeaderProps {
 
 export default function Header({ onLogout, pageName, user }: HeaderProps) {
   const formatUserName = (name: string) => {
-    return name.split(' ')[0]; // Retorna apenas o primeiro nome
+    return name.split(' ')[0];
+  };
+
+  const handleLogoutClick = () => {
+    if (typeof window !== "undefined") {
+      const confirmLogout = window.confirm("Deseja realmente sair do sistema?");
+      if (confirmLogout) {
+        onLogout();
+      }
+    }
   };
 
   return (
@@ -20,7 +29,7 @@ export default function Header({ onLogout, pageName, user }: HeaderProps) {
         {/* Logo e Nome do Sistema */}
         <div className="flex items-center space-x-4">
           <div className="text-white">
-            <h1 className="text-xl font-bold ">{pageName}</h1>
+            <h1 className="text-xl font-bold">{pageName}</h1>
             <p className="text-sm opacity-90">FATEC SISTEMA DE CONTROLE DE ACESSO</p>
           </div>
         </div>
@@ -35,11 +44,10 @@ export default function Header({ onLogout, pageName, user }: HeaderProps) {
           )}
           
           <button
-            onClick={onLogout}
+            onClick={handleLogoutClick}
             className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg font-semibold transition-colors shadow-md flex items-center justify-center"
             title="Sair do sistema"
           >
-            {/* Ícone SVG de logout como fallback */}
             <svg 
               width="20" 
               height="20" 

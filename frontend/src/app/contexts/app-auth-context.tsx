@@ -1,6 +1,8 @@
+// contexts/app-auth-context.tsx
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { databaseService, UsuarioCompleto } from '../services/database-service';
 
 interface AppAuthContextType {
@@ -18,6 +20,7 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<UsuarioCompleto | null>(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   const handleLoginSuccess = (user: UsuarioCompleto) => {
     setIsAuthenticated(true);
@@ -35,17 +38,16 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('fatec-portaria-user');
       localStorage.removeItem('fatec-portaria-auth');
     }
+    router.push('/');
   };
 
   const checkDatabaseConnection = async () => {
     try {
-      // Simples health check - você pode ajustar para testar uma rota específica
       setLoading(false);
       console.log('Database connection successful');
     } catch (error) {
       console.error('Database connection error:', error);
       setLoading(false);
-      // No Next.js podemos usar toast ou modais em vez de Alert
     }
   };
 
@@ -54,9 +56,10 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
 
     const initializeAuth = async () => {
       if (mounted) {
-        // Verificar autenticação salva
         const savedAuth = typeof window !== 'undefined' ? localStorage.getItem('fatec-portaria-auth') : null;
         const savedUser = typeof window !== 'undefined' ? localStorage.getItem('fatec-portaria-user') : null;
+        
+        console.log('Initializing auth:', { savedAuth, savedUser });
         
         if (savedAuth === 'true' && savedUser) {
           try {
@@ -70,6 +73,7 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
         }
         
         await checkDatabaseConnection();
+        setLoading(false);
       }
     };
 

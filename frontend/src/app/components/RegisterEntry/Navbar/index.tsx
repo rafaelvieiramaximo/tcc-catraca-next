@@ -1,4 +1,4 @@
-// app/components/RegisterEntry/Navbar/index.tsx
+// components/RegisterEntry/Navbar/index.tsx
 'use client';
 
 import { UsuarioCompleto } from '../../../services/database-service';
@@ -9,9 +9,12 @@ interface NavBarRegisterProps {
 }
 
 export default function NavBarRegister({ onLogout, user }: NavBarRegisterProps) {
-  const handleLogout = () => {
-    if (onLogout) {
-      onLogout();
+  const handleLogoutClick = () => {
+    if (typeof window !== "undefined") {
+      const confirmLogout = window.confirm("Deseja realmente sair do sistema?");
+      if (confirmLogout && onLogout) {
+        onLogout(); // 🔥 Agora isso vai redirecionar automaticamente
+      }
     }
   };
 
@@ -36,7 +39,7 @@ export default function NavBarRegister({ onLogout, user }: NavBarRegisterProps) 
           )}
           
           <button
-            onClick={handleLogout}
+            onClick={handleLogoutClick}
             className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg font-semibold transition-colors shadow-md flex items-center justify-center"
             title="Sair do sistema"
           >
