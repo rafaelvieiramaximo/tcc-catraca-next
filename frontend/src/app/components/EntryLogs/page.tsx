@@ -8,6 +8,8 @@ import { databaseService } from "../../services/database-service";
 import Header from "../Header";
 import MenuNavigation from "../MenuNavigation";
 import NavBarRegister from "../RegisterEntry/Navbar/index";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 interface EntryLogsProps {
   user: UsuarioCompleto | null;
@@ -108,9 +110,120 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
 
     setGeneratingPDF(true);
     try {
-      // TODO: Implementar geração de PDF
-      console.log("Gerando PDF para", filteredLogs.length, "logs");
-      // Lógica de PDF seria implementada aqui
+      // Criar novo documento PDF
+      const doc = new jsPDF();
+      
+      // Adicionar título
+      doc.setFontSize(16);
+      doc.setTextColor(44, 95, 105); // #2C5F69
+      doc.text("Relatório de Logs de Entrada - FATEC", 14, 15);
+      
+      // Adicionar informações dos filtros aplicados
+      doc.setFontSize(10);
+      doc.setTextColor(0, 0, 0);
+      
+      let yPosition = 25;
+      
+      // Informações de data/hora da geração
+      const now = new Date();
+      doc.text(`Relatório gerado em: ${now.toLocaleString('pt-BR')}`, 14, yPosition);
+      yPosition += 5;
+      
+      // Filtros aplicados
+      doc.text("Filtros aplicados:", 14, yPosition);
+      yPosition += 5;
+      
+      if (filtros.searchTerm) {
+        doc.text(`• Pesquisa: "${filtros.searchTerm}"`, 20, yPosition);
+        yPosition += 4;
+      }
+      
+      if (filtros.hoje) {
+        doc.text(`• Filtro: Hoje`, 20, yPosition);
+        yPosition += 4;
+      }
+      
+      if (filtros.periodo) {
+        doc.text(`• Período: ${filtros.periodo}`, 20, yPosition);
+        yPosition += 4;
+      }
+      
+      if (filtros.tipo) {
+        doc.text(`• Tipo: ${filtros.tipo}`, 20, yPosition);
+        yPosition += 4;
+      }
+      
+      if (filtros.filterType) {
+        const filterTypeText = {
+          data: "Data específica",
+          periodo: "Período",
+          dia: "Dia"
+        }[filtros.filterType];
+        doc.text(`• Tipo de filtro: ${filterTypeText}`, 20, yPosition);
+        yPosition += 4;
+      }
+      
+      // Total de registros
+      doc.text(`• Total de registros: ${filteredLogs.length}`, 20, yPosition);
+      yPosition += 8;
+
+      // Preparar dados da tabela
+      const tableData = filteredLogs.map((log, index) => [
+        (index + 1).toString(),
+        log.identificador,
+        log.nome,
+        log.tipo,
+        formatDate(log.data_entrada),
+        formatTime(log.horario),
+        log.periodo,
+        controle(log)
+      ]);
+
+      // Adicionar tabela
+      autoTable(doc, {
+        head: [['#', 'Identificador', 'Nome', 'Tipo', 'Data', 'Horário', 'Período', 'Controle']],
+        body: tableData,
+        startY: yPosition + 5,
+        styles: {
+          fontSize: 8,
+          cellPadding: 2,
+        },
+        headStyles: {
+          fillColor: [44, 95, 105], // #2C5F69
+          textColor: 255,
+          fontStyle: 'bold'
+        },
+        alternateRowStyles: {
+          fillColor: [240, 240, 240]
+        },
+        columnStyles: {
+          0: { cellWidth: 10 }, // #
+          1: { cellWidth: 25 }, // Identificador
+          2: { cellWidth: 35 }, // Nome
+          3: { cellWidth: 25 }, // Tipo
+          4: { cellWidth: 25 }, // Data
+          5: { cellWidth: 20 }, // Horário
+          6: { cellWidth: 25 }, // Período
+          7: { cellWidth: 20 }, // Controle
+        },
+        margin: { top: 10 },
+        didDrawPage: function (data) {
+          // Adicionar número da página
+          const pageCount = doc.getNumberOfPages();
+          doc.setFontSize(8);
+          doc.text(
+            `Página ${data.pageNumber} de ${pageCount}`,
+            doc.internal.pageSize.getWidth() / 2,
+            doc.internal.pageSize.getHeight() - 10,
+            { align: 'center' }
+          );
+        }
+      });
+
+      // Salvar o PDF
+      const fileName = `logs_entrada_${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours()}${now.getMinutes()}.pdf`;
+      doc.save(fileName);
+
     } catch (error) {
       console.error("Erro ao gerar PDF:", error);
       alert("Não foi possível gerar o PDF");
@@ -164,7 +277,7 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
         <MenuNavigation currentPath="/entry-logs" />
       )}
 
-      {/* Content Area - CORRIGIDO: Adicionado flex-col */}
+      {/* Content Area */}
       <div className="flex-1 flex flex-col p-6 max-w-7xl mx-auto w-full">
         {/* Search and Filters Section */}
         <div className="mb-4">
@@ -262,35 +375,37 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
           </span>
 
           <button
-            className={`flex items-center px-3 py-2 rounded text-sm font-medium ${
+            className={`flex items-center px-4 py-2 rounded text-sm font-medium ${
               generatingPDF || filteredLogs.length === 0
                 ? "bg-gray-400 cursor-not-allowed"
                 : "bg-red-600 hover:bg-red-700"
-            } text-white`}
+            } text-white transition-colors`}
             onClick={handleGeneratePDF}
             disabled={generatingPDF || filteredLogs.length === 0}
           >
             {generatingPDF ? (
               <>
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                Gerando...
+                Gerando PDF...
               </>
             ) : (
-              "Gerar PDF"
+              <>
+                📄 Exportar PDF
+              </>
             )}
           </button>
         </div>
 
-        {/* Logs List - CORRIGIDO: Estrutura de scroll igual ao ActionLogs */}
+        {/* Logs List */}
         {loading && offset === 0 ? (
           <div className="flex flex-col items-center justify-center min-h-[200px]">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#4A90A4]"></div>
             <span className="mt-4 text-gray-600">Carregando logs...</span>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col min-h-0"> {/* CORRIGIDO: Container flexível */}
-            <div className="bg-white rounded-lg shadow-sm flex-1 flex flex-col min-h-0"> {/* CORRIGIDO: Flex container */}
-              <div className="flex-1 overflow-y-auto"> {/* CORRIGIDO: Scroll area */}
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="bg-white rounded-lg shadow-sm flex-1 flex flex-col min-h-0">
+              <div className="flex-1 overflow-y-auto">
                 {filteredLogs.length > 0 ? (
                   <div className="p-4">
                     {filteredLogs.map((item) => (
