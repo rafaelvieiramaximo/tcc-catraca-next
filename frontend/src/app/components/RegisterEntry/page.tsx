@@ -7,7 +7,7 @@ import { databaseService, UsuarioCompleto, LogEntrada, Usuario } from '../../ser
 import NavBarRegister from './Navbar';
 
 interface RegisterProps {
-    user: Usuario;
+    user: UsuarioCompleto | null;
     onLogout?: () => void;
 }
 
