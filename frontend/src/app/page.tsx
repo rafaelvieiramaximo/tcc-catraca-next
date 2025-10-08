@@ -1,3 +1,4 @@
+// app/page.tsx
 'use client';
 
 import { useEffect } from 'react';
@@ -15,12 +16,12 @@ export default function Home() {
   } = useAppAuth();
   
   const router = useRouter();
-  console.log("")
+
   useEffect(() => {
     if (isAuthenticated && currentUser && !loading) {
-      if (currentUser.tipo === 'PORTARIA' || currentUser.tipo === 'ADMIN') {
+      if (currentUser.tipo === 'PORTARIA') {
         router.push('/portaria');
-      } else {
+      } else if (currentUser.tipo === 'ADMIN') {
         router.push('/admin');
       }
     }
