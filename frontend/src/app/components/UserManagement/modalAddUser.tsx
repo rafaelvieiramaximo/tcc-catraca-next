@@ -1,7 +1,7 @@
 // app/components/UserManagement/modalAddUser.tsx
 'use client';
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { databaseService, UsuarioCompleto, TipoS } from "../../services/database-service";
 
 interface AddUserModalProps {
@@ -25,6 +25,12 @@ export default function AddUserModal({
     const [imagemBase64, setImagemBase64] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [imageLoading, setImageLoading] = useState(false);
+    const [cameraActive, setCameraActive] = useState(false);
+    const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
+    
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
 
     useEffect(() => {
         if (userToEdit) {
@@ -34,7 +40,6 @@ export default function AddUserModal({
                 identificador: userToEdit.identificador.toString(),
             });
 
-            // Carregar imagem do usuário se existir
             if (userToEdit.tem_imagem) {
                 loadUserImage(userToEdit.id);
             } else {
@@ -50,6 +55,14 @@ export default function AddUserModal({
         }
     }, [userToEdit]);
 
+    useEffect(() => {
+        return () => {
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(track => track.stop());
+            }
+        };
+    }, []);
+
     const loadUserImage = async (userId: number) => {
         try {
             setImageLoading(true);
@@ -61,6 +74,73 @@ export default function AddUserModal({
         } finally {
             setImageLoading(false);
         }
+    };
+
+    const startCamera = async () => {
+        try {
+            setCameraActive(true);
+            const constraints = {
+                video: { 
+                    facingMode: facingMode,
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            };
+            
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            streamRef.current = stream;
+            
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+            }
+        } catch (error) {
+            console.error("Erro ao acessar a câmera:", error);
+            alert("Não foi possível acessar a câmera. Verifique as permissões.");
+            setCameraActive(false);
+        }
+    };
+
+    const stopCamera = () => {
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+        }
+        setCameraActive(false);
+    };
+
+    const capturePhoto = () => {
+        if (videoRef.current && canvasRef.current) {
+            const video = videoRef.current;
+            const canvas = canvasRef.current;
+            const context = canvas.getContext('2d');
+            
+            // Configurar canvas com as dimensões do vídeo
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            // Desenhar o frame atual do vídeo no canvas
+            context?.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Converter para base64
+            const imageData = canvas.toDataURL('image/jpeg', 0.8);
+            setImagemBase64(imageData);
+            
+            // Parar a câmera
+            stopCamera();
+        }
+    };
+
+    const switchCamera = async () => {
+        // Parar câmera atual
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+        }
+        
+        // Alternar entre frontal e traseira
+        setFacingMode(prev => prev === "user" ? "environment" : "user");
+        
+        // Reiniciar câmera com novo facingMode
+        await startCamera();
     };
 
     const handleSelectImage = () => {
@@ -181,6 +261,10 @@ export default function AddUserModal({
     };
 
     const handleClose = () => {
+        // Parar câmera se estiver ativa
+        if (cameraActive) {
+            stopCamera();
+        }
         setImagemBase64(null);
         onClose();
     };
@@ -209,19 +293,60 @@ export default function AddUserModal({
                         <div className="text-base font-semibold text-gray-800 mb-2">Foto do Perfil</div>
 
                         <div className="flex justify-center">
-                            {imagemBase64 ? (
+                            {cameraActive ? (
+                                // Interface da Câmera
+                                <div className="text-center">
+                                    <div className="relative bg-black rounded-lg overflow-hidden mb-4">
+                                        <video
+                                            ref={videoRef}
+                                            autoPlay
+                                            playsInline
+                                            muted
+                                            className="w-full max-w-xs h-64 object-cover"
+                                        />
+                                        <canvas ref={canvasRef} className="hidden" />
+                                    </div>
+                                    <div className="flex justify-center gap-3">
+                                        <button
+                                            className="px-4 py-2 bg-red-500 text-white rounded-md text-sm font-medium hover:bg-red-600"
+                                            onClick={stopCamera}
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button
+                                            className="px-4 py-2 bg-blue-500 text-white rounded-md text-sm font-medium hover:bg-blue-600"
+                                            onClick={capturePhoto}
+                                        >
+                                            📸 Tirar Foto
+                                        </button>
+                                        <button
+                                            className="px-4 py-2 bg-gray-500 text-white rounded-md text-sm font-medium hover:bg-gray-600"
+                                            onClick={switchCamera}
+                                        >
+                                            🔄 {facingMode === "user" ? "Traseira" : "Frontal"}
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : imagemBase64 ? (
+                                // Preview da Imagem
                                 <div className="text-center">
                                     <img
                                         src={imagemBase64}
                                         alt="Preview"
-                                        className="w-30 h-30 rounded-full bg-gray-100 object-cover mb-2"
+                                        className="w-30 h-30 rounded-full bg-gray-100 object-cover mb-2 mx-auto"
                                     />
                                     <div className="flex justify-center gap-2">
                                         <button
                                             className="px-4 py-2 bg-blue-500 text-white rounded-md text-sm font-medium hover:bg-blue-600"
                                             onClick={handleSelectImage}
                                         >
-                                            Alterar
+                                            Galeria
+                                        </button>
+                                        <button
+                                            className="px-4 py-2 bg-green-500 text-white rounded-md text-sm font-medium hover:bg-green-600"
+                                            onClick={startCamera}
+                                        >
+                                            Câmera
                                         </button>
                                         <button
                                             className="px-4 py-2 bg-red-500 text-white rounded-md text-sm font-medium hover:bg-red-600"
@@ -232,17 +357,29 @@ export default function AddUserModal({
                                     </div>
                                 </div>
                             ) : (
-                                <button
-                                    className="w-30 h-30 rounded-full bg-gray-50 border-2 border-dashed border-gray-300 flex flex-col items-center justify-center p-4 hover:border-blue-400 transition-colors"
-                                    onClick={handleSelectImage}
-                                >
-                                    <div className="text-blue-500 text-sm font-semibold text-center">
-                                        {imageLoading ? "Carregando..." : "+ Adicionar Foto"}
+                                // Opções para Adicionar Foto
+                                <div className="text-center">
+                                    <div className="w-30 h-30 rounded-full bg-gray-50 border-2 border-dashed border-gray-300 flex flex-col items-center justify-center p-4 hover:border-blue-400 transition-colors mb-4 mx-auto">
+                                        <div className="text-gray-400 text-2xl mb-2">📷</div>
+                                        <div className="text-gray-500 text-xs text-center">
+                                            Selecione uma opção
+                                        </div>
                                     </div>
-                                    <div className="text-gray-500 text-xs text-center mt-1">
-                                        Clique para selecionar uma imagem
+                                    <div className="flex justify-center gap-3">
+                                        <button
+                                            className="px-4 py-2 bg-blue-500 text-white rounded-md text-sm font-medium hover:bg-blue-600 flex items-center gap-2"
+                                            onClick={handleSelectImage}
+                                        >
+                                            📁 Galeria
+                                        </button>
+                                        <button
+                                            className="px-4 py-2 bg-green-500 text-white rounded-md text-sm font-medium hover:bg-green-600 flex items-center gap-2"
+                                            onClick={startCamera}
+                                        >
+                                            📸 Câmera
+                                        </button>
                                     </div>
-                                </button>
+                                </div>
                             )}
                         </div>
                     </div>
@@ -251,11 +388,6 @@ export default function AddUserModal({
                     <div className="mb-5">
                         <div className="text-sm font-semibold text-gray-800 mb-2">Tipo</div>
                         <div className="flex flex-col">
-                            {/* <div className="bg-gray-50 rounded-lg border border-gray-200 p-3 mb-2">
-                                <div className="text-base text-gray-800">
-                                    {formData.tipo === "ESTUDANTE" ? "Estudante" : "Funcionário"}
-                                </div>
-                            </div> */}
                             <div className="flex justify-between gap-2">
                                 <button
                                     className={`flex-1 py-3 rounded-lg border text-sm font-medium transition-colors ${formData.tipo === "ESTUDANTE"

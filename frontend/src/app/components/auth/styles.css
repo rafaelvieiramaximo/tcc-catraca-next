@@ -88,7 +88,8 @@
 }
 
 .type-button:hover:not(:disabled) {
-  background-color: #E9ECEF;
+  background-color: #627a90;
+  color:#E9ECEF
 }
 
 .type-button-active {
@@ -104,7 +105,7 @@
 .type-button-text {
   font-size: 14px;
   font-weight: 600;
-  color: #6C757D;
+  color: #216b7c;
 }
 
 .type-button-text-active {

@@ -92,7 +92,6 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
     <div className="login-container" key={key}>
       <div className="login-card">
         <div className="login-header">
-          {/* Logo - Corrigido usando Image do Next.js */}
           <div className="logo-container">
             <Image 
               src="/assets/images/logo_fatec.png" 
