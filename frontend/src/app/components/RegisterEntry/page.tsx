@@ -151,8 +151,7 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
                 {/* Admin Header */}
                 <div className="bg-gray-800 text-white p-3 rounded-lg mb-5 shadow-sm text-center">
                     <div className="mb-3">
-                        <div className="text-3xl font-bold mb-1 tracking-wide">FATEC</div>
-                        <div className="text-sm opacity-80 font-light">Itu</div>
+                        <div className="text-3xl font-bold mb-1 tracking-wide">FATEC ITU</div>
                     </div>
                     <h1 className="text-xl font-normal opacity-90 m-0">PORTARIA - SISTEMA</h1>
                 </div>

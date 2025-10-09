@@ -527,6 +527,31 @@ app.put('/api/users/:id', async (req, res) => {
   }
 });
 
+app.delete('/api/users/:id', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { id } = req.params;
+
+    await client.query('DELETE FROM usuario WHERE id = $1', [id]);
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: 'Usuário excluído com sucesso'
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Delete user error:', error);
+    res.status(500).json({ error: 'Erro ao excluir usuário' });
+  } finally {
+    client.release();
+  }
+});
+
 // ==================== LOG AÇÃO ====================
 
 app.get('/api/logs/action', async (req, res) => {
