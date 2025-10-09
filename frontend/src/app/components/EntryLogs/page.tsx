@@ -265,21 +265,17 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
 
   return (
     <div className="flex flex-col min-h-screen bg-[#F5F5F5] w-full">
-      {/* Header Baseado no Tipo de Usuário */}
       {user && user.tipo === "ADMIN" ? (
         <Header onLogout={handleLogout} pageName="Logs de Entrada" user={user} />
       ) : (
         <NavBarRegister onLogout={handleLogout} user={user} />
       )}
 
-      {/* Menu Navigation apenas para ADMIN */}
       {user && user.tipo === "ADMIN" && (
         <MenuNavigation currentPath="/entry-logs" />
       )}
 
-      {/* Content Area */}
       <div className="flex-1 flex flex-col p-6 max-w-7xl mx-auto w-full">
-        {/* Search and Filters Section */}
         <div className="mb-4">
           <div className="flex items-center bg-white rounded-lg shadow-sm px-4 py-2">
             <button
@@ -307,7 +303,6 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
             </button>
           </div>
 
-          {/* Filtros Expandíveis */}
           {showFilters && (
             <div className="bg-white rounded-lg shadow-sm p-4 mt-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
