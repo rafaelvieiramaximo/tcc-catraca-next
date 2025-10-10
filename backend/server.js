@@ -534,6 +534,16 @@ app.delete('/api/users/:id', async (req, res) => {
 
     const { id } = req.params;
 
+    // Verificar se usuário existe
+    const userCheck = await client.query('SELECT id FROM usuario WHERE id = $1', [id]);
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    // Deletar dependências
+    await client.query('DELETE FROM user_finger WHERE user_id = $1', [id]);
+    
+    // Deletar usuário
     await client.query('DELETE FROM usuario WHERE id = $1', [id]);
 
     await client.query('COMMIT');
@@ -546,12 +556,19 @@ app.delete('/api/users/:id', async (req, res) => {
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Delete user error:', error);
+    
+    // Mensagem mais específica para o frontend
+    if (error.code === '23503') {
+      return res.status(409).json({ 
+        error: 'Não foi possível excluir o usuário. Existem registros vinculados.' 
+      });
+    }
+    
     res.status(500).json({ error: 'Erro ao excluir usuário' });
   } finally {
     client.release();
   }
 });
-
 // ==================== LOG AÇÃO ====================
 
 app.get('/api/logs/action', async (req, res) => {
