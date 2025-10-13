@@ -43,7 +43,7 @@ export default function Menu({ user, onLogout }: MenuProps) {
   const getUserTypeTitle = () => {
     switch (user.tipo) {
       case "ADMIN":
-        return "ADMINISTRADOR - SISTEMA";
+        return "ÁREA DE GESTÃO";
       case "PORTARIA":
         return "PORTARIA - CONTROLE";
       default:

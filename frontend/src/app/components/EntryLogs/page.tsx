@@ -291,7 +291,7 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
 
             <input
               type="text"
-              className="flex-1 mx-2 p-2 text-gray-700 focus:outline-none"
+              className="flex-1 mx-2 p-2 text-gray-700 focus:outline-none border border-gray-300 rounded"
               placeholder="Pesquisar por nome ou ID"
               value={filtros.searchTerm}
               onChange={(e) =>
@@ -303,7 +303,6 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
               className="p-2 text-gray-600 text-xl"
               onClick={applyFilters}
             >
-              🔍
             </button>
           </div>
 
@@ -378,7 +377,7 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
             className={`flex items-center px-4 py-2 rounded text-sm font-medium ${
               generatingPDF || filteredLogs.length === 0
                 ? "bg-gray-400 cursor-not-allowed"
-                : "bg-red-600 hover:bg-red-700"
+                : "bg-green-800 hover:bg-green-700"
             } text-white transition-colors`}
             onClick={handleGeneratePDF}
             disabled={generatingPDF || filteredLogs.length === 0}

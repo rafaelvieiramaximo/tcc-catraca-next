@@ -22,14 +22,14 @@ export default function MenuNavigation({ currentPath }: MenuNavigationProps) {
   };
 
   return (
-    <div className="flex bg-[#C41E3A] px-5 py-3">
+    <div className="flex bg-[#e2e2e2ff] px-5 py-3">
       {navItems.map((item) => (
         <button
           key={item.label}
-          className={`mr-8 px-3 py-2 text-white text-xs font-semibold tracking-wide transition-colors ${
+          className={`mr-8 px-3 py-2 text-black text-xs font-semibold tracking-wide transition-colors ${
             isActive(item.path) 
-              ? 'bg-gray-800 bg-opacity-20 rounded' 
-              : 'hover:bg-red-400 hover:bg-opacity-10 rounded'
+              ? 'bg-gray-300 bg-opacity-20 rounded' 
+              : 'hover:bg-gray-400 hover:bg-opacity-10 rounded'
           }`}
           onClick={() => router.push(item.path)}
         >

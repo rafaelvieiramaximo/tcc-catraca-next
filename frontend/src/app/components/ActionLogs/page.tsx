@@ -391,7 +391,7 @@ const filteredLogs = logs.filter((log) => {
             className={`flex items-center px-4 py-2 rounded text-sm font-medium ${
               generatingPDF || filteredLogs.length === 0
                 ? "bg-gray-400 cursor-not-allowed"
-                : "bg-red-600 hover:bg-red-700"
+                : "bg-green-800 hover:bg-green-700"
             } text-white transition-colors`}
             onClick={handleGeneratePDF}
             disabled={generatingPDF || filteredLogs.length === 0}

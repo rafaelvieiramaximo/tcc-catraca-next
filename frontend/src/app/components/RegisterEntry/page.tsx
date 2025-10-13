@@ -251,7 +251,7 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
 
                                 {/* Status Message */}
                                 <div 
-                                    className="p-3 rounded text-white font-semibold text-center text-sm mt-3"
+                                    className="p-3 rounded text-white flex items-center justify-center font-semibold text-center ml-100 text-sm mt-3 h-10 w-100"
                                     style={{ backgroundColor: getStatusColor(latestEntry.controle) }}
                                 >
                                     {getStatusIcon(latestEntry.controle)} {getStatusText(latestEntry.controle)}
@@ -312,7 +312,7 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
                                 Visualize todos os registros de entrada e saída
                             </p>
                             <button 
-                                className={`w-full bg-gray-800 border-none text-white py-2 px-4 rounded font-semibold cursor-pointer transition-all duration-200 text-sm ${
+                                className={`w-60 bg-gray-800 border-none text-white py-2 px-4 rounded font-semibold cursor-pointer transition-all duration-200 text-sm ${
                                     isSidebarHovered ? 'bg-gray-700 transform -translate-y-0.5' : ''
                                 }`}
                                 onClick={() => router.push('/entry-logs')}
