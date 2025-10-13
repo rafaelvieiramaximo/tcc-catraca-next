@@ -3,6 +3,7 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import { databaseService, UsuarioCompleto, TipoS } from "../../services/database-service";
+import { log } from "console";
 
 interface AddUserModalProps {
     visible: boolean;
@@ -27,7 +28,7 @@ export default function AddUserModal({
     const [imageLoading, setImageLoading] = useState(false);
     const [cameraActive, setCameraActive] = useState(false);
     const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
-    
+
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -76,20 +77,63 @@ export default function AddUserModal({
         }
     };
 
+    const logUserCreation = async (userData: any, success: boolean, errorMessage?: string) => {
+        try {
+            await databaseService.createActionLog({
+                identificador: userData.identificador,
+                acao: 'CRIAR_USUARIO',
+                status: success ? 'SUCESSO' : 'ERRO',
+                detalhes: success
+                    ? `${userData.tipo} ${userData.nome} cadastrado com ${userData.tipo === 'ESTUDANTE' ? 'RA' : 'Matrícula'} ${userData.identificador}`
+                    : `Falha ao criar usuário ${userData.nome}: ${errorMessage}`,
+                nome_usuario: userData.nome
+            });
+        } catch (error) {
+            console.error('Erro ao registrar log de criação:', error);
+        }
+    };
+
+    const logUserUpdate = async (originalUser: UsuarioCompleto, updatedData: any, success: boolean, errorMessage?: string) => {
+        try {
+            const changes = [];
+
+            if (originalUser.nome !== updatedData.nome) {
+                changes.push(`nome: "${originalUser.nome}" → "${updatedData.nome}"`);
+            }
+            if (originalUser.identificador !== updatedData.identificador) {
+                changes.push(`${originalUser.tipo === 'ESTUDANTE' ? 'RA' : 'Matrícula'}: ${originalUser.identificador} → ${updatedData.identificador}`);
+            }
+
+            await databaseService.createActionLog({
+                id_usuario: originalUser.id,
+                identificador: updatedData.identificador,
+                acao: 'ATUALIZAR_USUARIO',
+                status: success ? 'SUCESSO' : 'ERRO',
+                detalhes: success
+                    ? `Usuário ID ${originalUser.id} editado: ${changes.join(', ')}`
+                    : `Falha ao editar usuário ${originalUser.nome}: ${errorMessage}`,
+                nome_usuario: updatedData.nome
+            });
+        } catch (error) {
+            console.error('Erro ao registrar log de edição:', error);
+        }
+    };
+
+
     const startCamera = async () => {
         try {
             setCameraActive(true);
             const constraints = {
-                video: { 
+                video: {
                     facingMode: facingMode,
                     width: { ideal: 1280 },
                     height: { ideal: 720 }
                 }
             };
-            
+
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
             streamRef.current = stream;
-            
+
             if (videoRef.current) {
                 videoRef.current.srcObject = stream;
             }
@@ -113,18 +157,18 @@ export default function AddUserModal({
             const video = videoRef.current;
             const canvas = canvasRef.current;
             const context = canvas.getContext('2d');
-            
+
             // Configurar canvas com as dimensões do vídeo
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
-            
+
             // Desenhar o frame atual do vídeo no canvas
             context?.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
+
             // Converter para base64
             const imageData = canvas.toDataURL('image/jpeg', 0.8);
             setImagemBase64(imageData);
-            
+
             // Parar a câmera
             stopCamera();
         }
@@ -135,10 +179,10 @@ export default function AddUserModal({
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => track.stop());
         }
-        
+
         // Alternar entre frontal e traseira
         setFacingMode(prev => prev === "user" ? "environment" : "user");
-        
+
         // Reiniciar câmera com novo facingMode
         await startCamera();
     };
@@ -228,6 +272,8 @@ export default function AddUserModal({
                     imagem_base64: imagemBase64,
                 });
 
+                await logUserUpdate(userToEdit, { ...formData, identificador: formData.identificador }, result.success, result.error);
+
                 if (result.success) {
                     alert("Usuário editado com sucesso!");
                     onUserAdded();
@@ -243,6 +289,7 @@ export default function AddUserModal({
                     identificador: formData.identificador.trim(),
                     imagem_base64: imagemBase64 || undefined,
                 });
+                await logUserCreation({ ...formData, identificador: formData.identificador.trim() }, result.success, result.error);
 
                 if (result.success) {
                     alert("Usuário cadastrado com sucesso!");

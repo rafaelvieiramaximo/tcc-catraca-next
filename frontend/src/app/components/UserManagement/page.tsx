@@ -73,12 +73,28 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
     }
   };
 
+  const logUserDeletion = async (user: UsuarioCompleto, success: boolean) => {
+    try {
+      await databaseService.createActionLog({
+        id_usuario: user.id,
+        identificador: user.identificador,
+        acao: 'EXCLUSAO_USUARIO',
+        status: success ? 'SUCESSO' : 'ERRO',
+        detalhes: `Usuário "${user.nome}" (tipo=${user.tipo}) ${success ? 'excluído com sucesso' : 'falha na exclusão'}`,
+        nome_usuario: user.nome
+      });
+    } catch (error) {
+      console.error('Erro ao registrar log de exclusão:', error);
+    }
+  };
+
   const handleUserAdded = async () => {
     await loadUsers();
   };
 
   const confirmDeleteUser = async (userId: number) => {
     try {
+      await logUserDeletion(users.find(u => u.id === userId)!, true);
       await databaseService.deleteUser(userId);
       await loadUsers();
       setShowDeleteSuccess(true);
@@ -129,7 +145,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
               value={searchText}
               onChange={(e) => filterUsers(e.target.value)}
             />
-            <button 
+            <button
               className="p-2"
               onClick={() => filterUsers(searchText)}
             >
@@ -189,7 +205,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
             )}
           </div>
 
-          <button 
+          <button
             className="fixed bottom-5 right-5 bg-black rounded-full w-15 h-15 flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow"
             onClick={handleAddUser}
           >
