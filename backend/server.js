@@ -1,6 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
@@ -15,10 +18,52 @@ const pool = new Pool({
   port: process.env.PGPORT,
 });
 
+// ==================== CONFIGURAÇÃO MULTER (UPLOAD DE ARQUIVOS) ====================
+
+// Criar pasta assets se não existir
+const assetsDir = path.join(__dirname, 'assets');
+const usersImagesDir = path.join(assetsDir, 'users');
+if (!fs.existsSync(usersImagesDir)) {
+  fs.mkdirSync(usersImagesDir, { recursive: true });
+  console.log('✅ Pasta assets/users criada com sucesso');
+}
+
+// Configurar multer para salvar arquivos
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, usersImagesDir);
+  },
+  filename: (req, file, cb) => {
+    // Nome do arquivo: identificador + extensão original
+    const { identificador } = req.body;
+    if (!identificador) {
+      return cb(new Error('Identificador é obrigatório'), null);
+    }
+    const ext = path.extname(file.originalname);
+    const filename = `${identificador}${ext}`;
+    cb(null, filename);
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Apenas imagens são permitidas!'), false);
+    }
+  }
+});
+
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '10mb' })); // Aumentar limite para imagens
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Servir arquivos estáticos da pasta assets
+app.use('/assets', express.static(assetsDir));
 
 // Middleware de log
 app.use((req, res, next) => {
@@ -28,23 +73,22 @@ app.use((req, res, next) => {
 
 // ==================== FUNÇÕES AUXILIARES PARA IMAGENS ====================
 
-// Converter Buffer para base64
+// Converter Buffer para base64 (para compatibilidade durante transição)
 function bufferToBase64(buffer) {
   return buffer ? buffer.toString('base64') : null;
 }
 
-// Converter base64 para Buffer
+// Converter base64 para Buffer (para compatibilidade durante transição)
 function base64ToBuffer(base64String) {
   if (!base64String) return null;
   return Buffer.from(base64String, 'base64');
 }
 
-// Validar imagem base64
+// Validar imagem base64 (para compatibilidade durante transição)
 function isValidBase64Image(base64String) {
   if (!base64String) return false;
   try {
     const buffer = Buffer.from(base64String, 'base64');
-    // Verificar tamanho máximo (5MB)
     if (buffer.length > 5 * 1024 * 1024) {
       return false;
     }
@@ -54,9 +98,230 @@ function isValidBase64Image(base64String) {
   }
 }
 
-// ==================== AUTENTICAÇÃO ====================
+// Obter extensão do arquivo pelo MIME type
+function getExtensionFromMime(mimeType) {
+  const mimeToExt = {
+    'image/jpeg': '.jpg',
+    'image/jpg': '.jpg',
+    'image/png': '.png',
+    'image/gif': '.gif',
+    'image/webp': '.webp'
+  };
+  return mimeToExt[mimeType] || '.jpg';
+}
 
-// Login de administrador usando bcrypt do PostgreSQL
+// ==================== NOVOS ENDPOINTS PARA IMAGENS COMO ARQUIVOS ====================
+
+// Upload/Atualização de imagem do usuário como arquivo
+app.put('/api/users/:id/image-file', upload.single('image'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { id } = req.params;
+    const { identificador } = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'Nenhuma imagem fornecida' });
+    }
+
+    if (!identificador) {
+      return res.status(400).json({ error: 'Identificador é obrigatório' });
+    }
+
+    // Verificar se usuário existe
+    const userCheck = await client.query('SELECT id, identificador FROM usuario WHERE id = $1', [id]);
+    if (userCheck.rows.length === 0) {
+      // Se o upload foi feito, remover o arquivo
+      if (req.file) {
+        fs.unlinkSync(req.file.path);
+      }
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    // Caminho relativo do arquivo
+    const imagePath = `assets/users/${req.file.filename}`;
+
+    // Primeiro tentar atualizar imagem_path (novo sistema)
+    try {
+      await client.query(
+        'UPDATE usuario SET imagem_path = $1, imagem_atualizada_em = NOW() WHERE id = $2',
+        [imagePath, id]
+      );
+    } catch (error) {
+      // Se a coluna imagem_path não existir, criar e tentar novamente
+      if (error.code === '42703') { // column does not exist
+        console.log('⚠️ Coluna imagem_path não existe, criando...');
+        await client.query('ALTER TABLE usuario ADD COLUMN imagem_path VARCHAR(255)');
+        await client.query(
+          'UPDATE usuario SET imagem_path = $1, imagem_atualizada_em = NOW() WHERE id = $2',
+          [imagePath, id]
+        );
+      } else {
+        throw error;
+      }
+    }
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: 'Imagem atualizada com sucesso',
+      imagePath: imagePath,
+      filename: req.file.filename
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Upload image file error:', error);
+    
+    // Se ocorreu erro e o arquivo foi salvo, removê-lo
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    
+    res.status(500).json({ 
+      error: 'Erro ao atualizar imagem',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// Obter URL da imagem do usuário
+app.get('/api/users/:id/image-url', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      'SELECT imagem_path, identificador FROM usuario WHERE id = $1',
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    const user = result.rows[0];
+    let imageUrl = null;
+
+    // Prioridade para o novo sistema (arquivos)
+    if (user.imagem_path) {
+      imageUrl = `http://localhost:${port}/${user.imagem_path}`;
+    }
+
+    res.json({
+      success: true,
+      imageUrl: imageUrl,
+      hasImage: !!imageUrl
+    });
+
+  } catch (error) {
+    console.error('Get image URL error:', error);
+    res.status(500).json({ error: 'Erro ao obter URL da imagem' });
+  }
+});
+
+// Servir imagem do usuário (endpoint compatível)
+app.get('/api/users/:id/image', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      'SELECT imagem, imagem_path, identificador FROM usuario WHERE id = $1',
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    const user = result.rows[0];
+
+    // Prioridade para o novo sistema (arquivos)
+    if (user.imagem_path) {
+      const filename = path.basename(user.imagem_path);
+      const filePath = path.join(usersImagesDir, filename);
+      
+      if (fs.existsSync(filePath)) {
+        return res.sendFile(filePath);
+      }
+    }
+
+    // Fallback para sistema antigo (base64/BYTEA)
+    if (user.imagem) {
+      res.set({
+        'Content-Type': 'image/jpeg',
+        'Content-Length': user.imagem.length
+      });
+      return res.send(user.imagem);
+    }
+
+    return res.status(404).json({ error: 'Imagem não encontrada' });
+
+  } catch (error) {
+    console.error('Get image error:', error);
+    res.status(500).json({ error: 'Erro ao obter imagem' });
+  }
+});
+
+// Remover imagem do usuário (compatível com ambos sistemas)
+app.delete('/api/users/:id/image', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { id } = req.params;
+
+    // Verificar se usuário existe
+    const userCheck = await client.query(
+      'SELECT imagem_path FROM usuario WHERE id = $1', 
+      [id]
+    );
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    const imagemPath = userCheck.rows[0].imagem_path;
+
+    // Remover arquivo físico se existir
+    if (imagemPath) {
+      const filename = path.basename(imagemPath);
+      const filePath = path.join(usersImagesDir, filename);
+      
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`🗑️ Arquivo de imagem removido: ${filePath}`);
+      }
+    }
+
+    // Remover referências no banco (ambos sistemas)
+    await client.query(
+      `UPDATE usuario 
+       SET imagem = NULL, imagem_path = NULL, imagem_atualizada_em = NULL 
+       WHERE id = $1`,
+      [id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: 'Imagem removida com sucesso'
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Delete image error:', error);
+    res.status(500).json({ error: 'Erro ao remover imagem' });
+  } finally {
+    client.release();
+  }
+});
+
+// ==================== AUTENTICAÇÃO (ATUALIZADO PARA SUPORTAR AMBOS SISTEMAS) ====================
+
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { tipo, identificador, senha } = req.body;
@@ -95,12 +360,15 @@ app.post('/api/auth/login', async (req, res) => {
 
     const user = result.rows[0];
     
-    // Converter imagem BYTEA para base64 se existir
-    if (user.imagem) {
+    // Se tem imagem_path, construir URL, senão usar base64 (compatibilidade)
+    if (user.imagem_path) {
+      user.imagem_url = `http://localhost:${port}/${user.imagem_path}`;
+    } else if (user.imagem) {
       user.imagem_base64 = bufferToBase64(user.imagem);
-      // Remover o buffer original para não enviar dados binários no JSON
-      delete user.imagem;
     }
+    
+    // Remover o buffer original para não enviar dados binários no JSON
+    delete user.imagem;
 
     return res.json({ success: true, user, message: 'Login realizado com sucesso' });
 
@@ -110,123 +378,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// ==================== ENDPOINTS DE IMAGENS ====================
-
-// Upload/Atualização de imagem do usuário
-app.put('/api/users/:id/image', async (req, res) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    const { id } = req.params;
-    const { imagem_base64 } = req.body;
-
-    if (!imagem_base64) {
-      return res.status(400).json({ error: 'Imagem não fornecida' });
-    }
-
-    if (!isValidBase64Image(imagem_base64)) {
-      return res.status(400).json({ error: 'Imagem inválida ou muito grande (máximo 5MB)' });
-    }
-
-    // Verificar se usuário existe
-    const userCheck = await client.query('SELECT id FROM usuario WHERE id = $1', [id]);
-    if (userCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Usuário não encontrado' });
-    }
-
-    // Converter base64 para Buffer
-    const imagemBuffer = base64ToBuffer(imagem_base64);
-
-    // Atualizar imagem do usuário
-    await client.query(
-      'UPDATE usuario SET imagem = $1, imagem_atualizada_em = NOW() WHERE id = $2',
-      [imagemBuffer, id]
-    );
-
-    await client.query('COMMIT');
-
-    res.json({
-      success: true,
-      message: 'Imagem atualizada com sucesso'
-    });
-
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Upload image error:', error);
-    res.status(500).json({ error: 'Erro ao atualizar imagem' });
-  } finally {
-    client.release();
-  }
-});
-
-// Obter imagem do usuário
-app.get('/api/users/:id/image', async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const result = await pool.query(
-      'SELECT imagem FROM usuario WHERE id = $1',
-      [id]
-    );
-
-    if (result.rows.length === 0 || !result.rows[0].imagem) {
-      return res.status(404).json({ error: 'Imagem não encontrada' });
-    }
-
-    const imagemBuffer = result.rows[0].imagem;
-    
-    // Determinar o tipo de conteúdo (você pode armazenar o mime type separadamente se necessário)
-    res.set({
-      'Content-Type': 'image/jpeg', // ou detectar dinamicamente
-      'Content-Length': imagemBuffer.length
-    });
-    
-    res.send(imagemBuffer);
-
-  } catch (error) {
-    console.error('Get image error:', error);
-    res.status(500).json({ error: 'Erro ao obter imagem' });
-  }
-});
-
-// Remover imagem do usuário
-app.delete('/api/users/:id/image', async (req, res) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    const { id } = req.params;
-
-    // Verificar se usuário existe
-    const userCheck = await client.query('SELECT id FROM usuario WHERE id = $1', [id]);
-    if (userCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Usuário não encontrado' });
-    }
-
-    // Remover imagem
-    await client.query(
-      'UPDATE usuario SET imagem = NULL, imagem_atualizada_em = NULL WHERE id = $1',
-      [id]
-    );
-
-    await client.query('COMMIT');
-
-    res.json({
-      success: true,
-      message: 'Imagem removida com sucesso'
-    });
-
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Delete image error:', error);
-    res.status(500).json({ error: 'Erro ao remover imagem' });
-  } finally {
-    client.release();
-  }
-});
-
-// ==================== USUÁRIOS ====================
+// ==================== ENDPOINTS DE USUÁRIOS (ATUALIZADOS) ====================
 
 app.get('/api/users', async (req, res) => {
   try {
@@ -238,17 +390,29 @@ app.get('/api/users', async (req, res) => {
         identificador, 
         created_at, 
         updated_at,
-        imagem,
-        CASE WHEN imagem IS NOT NULL THEN true ELSE false END as tem_imagem
+        imagem_path,
+        CASE 
+          WHEN imagem_path IS NOT NULL THEN true
+          WHEN imagem IS NOT NULL THEN true 
+          ELSE false 
+        END as tem_imagem
       FROM usuario 
       WHERE tipo != $1 AND tipo != $2 
       ORDER BY id
     `;
     const result = await pool.query(query, ['ADMIN', 'PORTARIA']);
 
+    // Adicionar URLs das imagens
+    const usersWithImages = result.rows.map(user => {
+      if (user.imagem_path) {
+        user.imagem_url = `http://localhost:${port}/${user.imagem_path}`;
+      }
+      return user;
+    });
+
     res.json({
       success: true,
-      users: result.rows
+      users: usersWithImages
     });
 
   } catch (error) {
@@ -260,7 +424,7 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
-// Buscar usuário por ID (com imagem em base64)
+// Buscar usuário por ID (atualizado para ambos sistemas)
 app.get('/api/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -270,7 +434,7 @@ app.get('/api/users/:id', async (req, res) => {
     let params = [id];
 
     if (incluir_imagem === 'true') {
-      query = 'SELECT *, imagem as imagem_buffer FROM usuario WHERE id = $1';
+      query = 'SELECT *, imagem as imagem_buffer, imagem_path FROM usuario WHERE id = $1';
     } else {
       query = `
         SELECT 
@@ -281,7 +445,12 @@ app.get('/api/users/:id', async (req, res) => {
           created_at, 
           updated_at,
           imagem_atualizada_em,
-          CASE WHEN imagem IS NOT NULL THEN true ELSE false END as tem_imagem
+          imagem_path,
+          CASE 
+            WHEN imagem_path IS NOT NULL THEN true
+            WHEN imagem IS NOT NULL THEN true 
+            ELSE false 
+          END as tem_imagem
         FROM usuario 
         WHERE id = $1
       `;
@@ -295,11 +464,20 @@ app.get('/api/users/:id', async (req, res) => {
 
     let user = result.rows[0];
 
-    // Converter imagem para base64 se solicitado
-    if (incluir_imagem === 'true' && user.imagem_buffer) {
-      user.imagem_base64 = bufferToBase64(user.imagem_buffer);
+    // Processar imagem se solicitado
+    if (incluir_imagem === 'true') {
+      // Prioridade para o novo sistema (URL)
+      if (user.imagem_path) {
+        user.imagem_url = `http://localhost:${port}/${user.imagem_path}`;
+      } 
+      // Fallback para sistema antigo (base64)
+      else if (user.imagem_buffer) {
+        user.imagem_base64 = bufferToBase64(user.imagem_buffer);
+      }
+      
+      // Limpar campos temporários
       delete user.imagem_buffer;
-      delete user.imagem; // Remover o campo BYTEA original
+      delete user.imagem;
     }
 
     res.json({
@@ -313,7 +491,10 @@ app.get('/api/users/:id', async (req, res) => {
   }
 });
 
-// Criar usuário (agora suporta imagem)
+// [MANTER TODOS OS OUTROS ENDPOINTS EXISTENTES EXATAMENTE COMO ESTÃO]
+// ==================== USUÁRIOS - ENDPOINTS EXISTENTES (MANTIDOS PARA COMPATIBILIDADE) ====================
+
+// Criar usuário (mantido para compatibilidade)
 app.post('/api/users', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -329,7 +510,7 @@ app.post('/api/users', async (req, res) => {
       return res.status(400).json({ error: 'Tipo inválido para esta rota' });
     }
 
-    // Validar imagem se for fornecida
+    // Validar imagem se for fornecida (sistema antigo)
     let imagemBuffer = null;
     if (imagem_base64) {
       if (!isValidBase64Image(imagem_base64)) {
@@ -362,7 +543,6 @@ app.post('/api/users', async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Create user (regular) error:', err);
-    // trate violações comuns de forma amigável
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Identificador já cadastrado' });
     }
@@ -372,7 +552,7 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
-// Criar usuário do sistema (admin/portaria)
+// Criar usuário do sistema (mantido para compatibilidade)
 app.post('/api/users/system', async (req, res) => {
   const client = await pool.connect();
 
@@ -385,7 +565,7 @@ app.post('/api/users/system', async (req, res) => {
       return res.status(400).json({ error: 'Dados obrigatórios não fornecidos' });
     }
 
-    // Validar imagem se for fornecida
+    // Validar imagem se for fornecida (sistema antigo)
     let imagemBuffer = null;
     if (imagem_base64) {
       if (!isValidBase64Image(imagem_base64)) {
@@ -438,7 +618,7 @@ app.post('/api/users/system', async (req, res) => {
   }
 });
 
-// Atualizar usuário (agora suporta imagem)
+// Atualizar usuário (mantido para compatibilidade)
 app.put('/api/users/:id', async (req, res) => {
   const client = await pool.connect();
 
@@ -466,7 +646,7 @@ app.put('/api/users/:id', async (req, res) => {
       updateValues.push(identificador);
     }
 
-    // Processar imagem se for fornecida
+    // Processar imagem se for fornecida (sistema antigo)
     if (imagem_base64 !== undefined) {
       if (imagem_base64 === null) {
         // Remover imagem
@@ -506,7 +686,12 @@ app.put('/api/users/:id', async (req, res) => {
         created_at, 
         updated_at,
         imagem_atualizada_em,
-        CASE WHEN imagem IS NOT NULL THEN true ELSE false END as tem_imagem
+        imagem_path,
+        CASE 
+          WHEN imagem_path IS NOT NULL THEN true
+          WHEN imagem IS NOT NULL THEN true 
+          ELSE false 
+        END as tem_imagem
       FROM usuario 
       WHERE id = $1
     `;
@@ -527,6 +712,7 @@ app.put('/api/users/:id', async (req, res) => {
   }
 });
 
+// Deletar usuário (mantido para compatibilidade)
 app.delete('/api/users/:id', async (req, res) => {
   const client = await pool.connect();
   try {
@@ -535,9 +721,19 @@ app.delete('/api/users/:id', async (req, res) => {
     const { id } = req.params;
 
     // Verificar se usuário existe
-    const userCheck = await client.query('SELECT id FROM usuario WHERE id = $1', [id]);
+    const userCheck = await client.query('SELECT imagem_path FROM usuario WHERE id = $1', [id]);
     if (userCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    // Remover arquivo de imagem se existir (novo sistema)
+    const imagemPath = userCheck.rows[0].imagem_path;
+    if (imagemPath) {
+      const filename = path.basename(imagemPath);
+      const filePath = path.join(usersImagesDir, filename);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
     }
 
     // Deletar dependências
@@ -557,7 +753,6 @@ app.delete('/api/users/:id', async (req, res) => {
     await client.query('ROLLBACK');
     console.error('Delete user error:', error);
     
-    // Mensagem mais específica para o frontend
     if (error.code === '23503') {
       return res.status(409).json({ 
         error: 'Não foi possível excluir o usuário. Existem registros vinculados.' 
@@ -569,8 +764,10 @@ app.delete('/api/users/:id', async (req, res) => {
     client.release();
   }
 });
-// ==================== LOG AÇÃO ====================
 
+// [MANTER TODOS OS OUTROS ENDPOINTS EXISTENTES: LOGS, HEALTH CHECK, ETC.]
+
+// ==================== LOG AÇÃO ====================
 app.get('/api/logs/action', async (req, res) => {
   try {
     const { limit = 100, offset = 0, usuario_id, acao, data_acao } = req.query;
@@ -636,7 +833,6 @@ app.post('/api/logs/action', async (req, res) => {
     let identificadorFinal = identificador || null;
     let idUsuarioFinal = id_usuario || null;
 
-    // Se só veio identificador, tente buscar o id_usuario (opcional)
     if (!idUsuarioFinal && identificadorFinal) {
       const userResult = await client.query(
         'SELECT id FROM usuario WHERE identificador = $1',
@@ -647,7 +843,6 @@ app.post('/api/logs/action', async (req, res) => {
       }
     }
 
-    // Insere o log mesmo que id_usuario seja null
     const result = await client.query(
       `INSERT INTO log (id_usuario, identificador, acao, status, detalhes, nome_usuario)
        VALUES ($1, $2, $3, $4, $5, $6)
@@ -675,8 +870,7 @@ app.post('/api/logs/action', async (req, res) => {
   }
 });
 
-// ==================== LOG  ENTRADA ====================
-
+// ==================== LOG ENTRADA ====================
 app.get('/api/logs/entrada', async (req, res) => {
   try {
     const { limit = 100, offset = 0, hoje, usuario_id, periodo, tipo } = req.query;
@@ -689,30 +883,25 @@ app.get('/api/logs/entrada', async (req, res) => {
 
     const params = [];
 
-    // Filtro por data de hoje
     if (hoje === 'true') {
       query += ` AND le.data_entrada = CURRENT_DATE`;
     }
 
-    // Filtro por usuário
     if (usuario_id) {
       query += ` AND le.usuario_id = $${params.length + 1}`;
       params.push(usuario_id);
     }
 
-    // Filtro por período
     if (periodo) {
       query += ` AND le.periodo = $${params.length + 1}`;
       params.push(periodo.toUpperCase());
     }
 
-    // Filtro por tipo
     if (tipo) {
       query += ` AND le.tipo = $${params.length + 1}`;
       params.push(tipo.toUpperCase());
     }
 
-    // Ordenação e paginação
     query += ` ORDER BY le.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(parseInt(limit), parseInt(offset));
 
@@ -734,14 +923,20 @@ app.get('/api/logs/entrada', async (req, res) => {
 });
 
 // ==================== HEALTH CHECK ====================
-
 app.get('/api/health', async (req, res) => {
   try {
     const result = await pool.query('SELECT NOW() as server_time');
+    
+    // Verificar se pasta assets existe
+    const assetsExists = fs.existsSync(assetsDir);
+    const usersImagesExists = fs.existsSync(usersImagesDir);
+    
     res.json({
       success: true,
       message: 'API funcionando corretamente',
       database: 'Conectado',
+      assets_system: assetsExists ? 'Ativo' : 'Inativo',
+      images_folder: usersImagesExists ? 'Pronto' : 'Não configurado',
       server_time: result.rows[0].server_time
     });
   } catch (error) {
@@ -754,9 +949,16 @@ app.get('/api/health', async (req, res) => {
 });
 
 // ==================== ERROR HANDLING ====================
-
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
+  
+  // Erros do multer
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'Arquivo muito grande (máximo 5MB)' });
+    }
+  }
+  
   res.status(500).json({
     error: 'Erro interno do servidor',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Algo deu errado'
@@ -768,11 +970,25 @@ app.use('*', (req, res) => {
 });
 
 // ==================== INICIALIZAÇÃO ====================
-
 async function initializeDatabase() {
   try {
     const client = await pool.connect();
     await client.query('SELECT NOW()');
+    
+    // Verificar se a coluna imagem_path existe, se não, criar
+    try {
+      await client.query('SELECT imagem_path FROM usuario LIMIT 1');
+      console.log('✅ Coluna imagem_path já existe');
+    } catch (error) {
+      if (error.code === '42703') { // column does not exist
+        console.log('🔄 Criando coluna imagem_path...');
+        await client.query('ALTER TABLE usuario ADD COLUMN imagem_path VARCHAR(255)');
+        console.log('✅ Coluna imagem_path criada com sucesso');
+      } else {
+        throw error;
+      }
+    }
+    
     client.release();
     console.log('✅ Conectado ao PostgreSQL com sucesso');
 
@@ -803,7 +1019,9 @@ async function startServer() {
     console.log('🚀 Servidor rodando!');
     console.log(`📍 API disponível em: http://localhost:${port}/api`);
     console.log(`🏥 Health check: http://localhost:${port}/api/health`);
-    console.log(`🖼️  Sistema de imagens BYTEA ativo`);
+    console.log(`🖼️  Sistema de imagens: ARQUIVOS FÍSICOS + Base64 (compatibilidade)`);
+    console.log(`📁 Pasta de imagens: ${usersImagesDir}`);
+    console.log(`🌐 Imagens estáticas: http://localhost:${port}/assets/users/identificador.jpg`);
   });
 }
 
