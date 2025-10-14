@@ -12,8 +12,8 @@ export default function MenuNavigation({ currentPath }: MenuNavigationProps) {
 
   const navItems = [
     { label: 'HOME', path: '/admin' },
-    { label: 'LOGS DE AÇÕES', path: '/admin/action-logs' },
     { label: 'LOGS DE ENTRADAS', path: '/entry-logs' },
+    { label: 'LOGS DE AÇÕES', path: '/admin/action-logs' },
     { label: 'GERENCIAMENTO DE USUÁRIOS', path: '/usermanage' },
   ];
 
