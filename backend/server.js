@@ -31,7 +31,7 @@ if (!fs.existsSync(usersImagesDir)) {
 // Usar memoryStorage
 const storage = multer.memoryStorage();
 
-const upload = multer({ 
+const upload = multer({
   storage: storage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
@@ -132,7 +132,7 @@ app.get('/api/users/:id/image', async (req, res) => {
     if (user.imagem_path) {
       const filename = path.basename(user.imagem_path);
       const filePath = path.join(usersImagesDir, filename);
-      
+
       if (fs.existsSync(filePath)) {
         return res.sendFile(filePath);
       }
@@ -154,7 +154,7 @@ app.delete('/api/users/:id/image', async (req, res) => {
     const { id } = req.params;
 
     const userCheck = await client.query(
-      'SELECT imagem_path FROM usuario WHERE id = $1', 
+      'SELECT imagem_path FROM usuario WHERE id = $1',
       [id]
     );
     if (userCheck.rows.length === 0) {
@@ -166,7 +166,7 @@ app.delete('/api/users/:id/image', async (req, res) => {
     if (imagemPath) {
       const filename = path.basename(imagemPath);
       const filePath = path.join(usersImagesDir, filename);
-      
+
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
@@ -232,7 +232,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const user = result.rows[0];
-    
+
     if (user.imagem_path) {
       user.imagem_url = `http://localhost:${port}/${user.imagem_path}`;
     }
@@ -437,7 +437,7 @@ app.put('/api/users/:id', async (req, res) => {
     const updatedUserResult = await client.query(updatedUserQuery, [id]);
 
     const user = updatedUserResult.rows[0];
-    
+
     if (user.imagem_path) {
       user.imagem_url = `http://localhost:${port}/${user.imagem_path}`;
     }
@@ -491,13 +491,13 @@ app.delete('/api/users/:id', async (req, res) => {
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Delete user error:', error);
-    
+
     if (error.code === '23503') {
-      return res.status(409).json({ 
-        error: 'Não foi possível excluir o usuário. Existem registros vinculados.' 
+      return res.status(409).json({
+        error: 'Não foi possível excluir o usuário. Existem registros vinculados.'
       });
     }
-    
+
     res.status(500).json({ error: 'Erro ao excluir usuário' });
   } finally {
     client.release();
@@ -666,10 +666,10 @@ app.get('/api/logs/entrada', async (req, res) => {
 app.get('/api/health', async (req, res) => {
   try {
     const result = await pool.query('SELECT NOW() as server_time');
-    
+
     const assetsExists = fs.existsSync(assetsDir);
     const usersImagesExists = fs.existsSync(usersImagesDir);
-    
+
     res.json({
       success: true,
       message: 'API funcionando corretamente',
@@ -691,13 +691,13 @@ app.get('/api/health', async (req, res) => {
 
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
-  
+
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({ error: 'Arquivo muito grande (máximo 5MB)' });
     }
   }
-  
+
   res.status(500).json({
     error: 'Erro interno do servidor',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Algo deu errado'
@@ -714,7 +714,7 @@ async function initializeDatabase() {
   try {
     const client = await pool.connect();
     await client.query('SELECT NOW()');
-    
+
     try {
       await client.query('SELECT imagem_path FROM usuario LIMIT 1');
       console.log('✅ Coluna imagem_path já existe');
@@ -727,7 +727,7 @@ async function initializeDatabase() {
         throw error;
       }
     }
-    
+
     client.release();
     console.log('✅ Conectado ao PostgreSQL com sucesso');
 

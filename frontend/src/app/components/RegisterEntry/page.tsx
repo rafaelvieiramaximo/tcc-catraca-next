@@ -176,11 +176,11 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
                             }`}>
                                 <div className="flex items-start gap-4 mb-4">
                                     {/* User Avatar */}
-                                    <div className="w-12 h-12 bg-gray-700 rounded-full flex items-center justify-center flex-shrink-0">
-                                        {imgUser?.imagem_base64 ? (
+                                    <div className="w-24 h-24 bg-gray-700 rounded-full flex items-center justify-center flex-shrink-0">
+                                        {imgUser?.imagem_url ? (
                                             <img 
-                                                className="w-12 h-12 rounded-full object-cover"
-                                                src={imgUser.imagem_base64} 
+                                                className="w-24 h-24 rounded-full object-cover"
+                                                src={imgUser.imagem_url} 
                                                 alt={`Foto de ${latestEntry.nome}`}
                                                 onError={(e) => {
                                                     const target = e.target as HTMLImageElement;
@@ -249,9 +249,9 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
                                     </div>
                                 </div>
 
-                                {/* Status Message */}
+                                {/* Status Message - centralizado sem usar ml */}
                                 <div 
-                                    className="p-3 rounded text-white flex items-center justify-center font-semibold text-center ml-100 text-sm mt-3 h-10 w-100"
+                                    className="p-3 rounded text-white flex items-center justify-center font-semibold text-center text-sm mt-3 h-10 w-60 mx-auto"
                                     style={{ backgroundColor: getStatusColor(latestEntry.controle) }}
                                 >
                                     {getStatusIcon(latestEntry.controle)} {getStatusText(latestEntry.controle)}
