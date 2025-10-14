@@ -175,7 +175,6 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
                                 showSuccess ? 'border-l-4 border-l-green-500 shadow-green-100' : ''
                             }`}>
                                 <div className="flex items-start gap-4 mb-4">
-                                    {/* User Avatar */}
                                     <div className="w-24 h-24 bg-gray-700 rounded-full flex items-center justify-center flex-shrink-0">
                                         {imgUser?.imagem_url ? (
                                             <img 
@@ -188,7 +187,7 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
                                                 }}
                                             />
                                         ) : (
-                                            <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                                            <div className="w-24 h-24 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
                                                 {latestEntry.nome.split(' ').map(n => n[0]).join('').toUpperCase()}
                                             </div>
                                         )}
