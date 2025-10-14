@@ -3,7 +3,6 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import { databaseService, UsuarioCompleto, TipoS } from "../../services/database-service";
-import { log } from "console";
 
 interface AddUserModalProps {
     visible: boolean;
@@ -23,7 +22,8 @@ export default function AddUserModal({
         nome: userToEdit?.nome || "",
         identificador: userToEdit?.identificador.toString() || "",
     });
-    const [imagemBase64, setImagemBase64] = useState<string | null>(null);
+    const [imagemFile, setImagemFile] = useState<File | null>(null);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [imageLoading, setImageLoading] = useState(false);
     const [cameraActive, setCameraActive] = useState(false);
@@ -42,9 +42,9 @@ export default function AddUserModal({
             });
 
             if (userToEdit.tem_imagem) {
-                loadUserImage(userToEdit.id);
+                loadUserImage(userToEdit);
             } else {
-                setImagemBase64(null);
+                setPreviewUrl(null);
             }
         } else {
             setFormData({
@@ -52,7 +52,8 @@ export default function AddUserModal({
                 nome: "",
                 identificador: "",
             });
-            setImagemBase64(null);
+            setPreviewUrl(null);
+            setImagemFile(null);
         }
     }, [userToEdit]);
 
@@ -61,17 +62,27 @@ export default function AddUserModal({
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop());
             }
+            // Limpar URLs de preview
+            if (previewUrl) {
+                URL.revokeObjectURL(previewUrl);
+            }
         };
     }, []);
 
-    const loadUserImage = async (userId: number) => {
+    // Carregar imagem usando o novo sistema
+    const loadUserImage = async (user: UsuarioCompleto) => {
         try {
             setImageLoading(true);
-            const base64 = await databaseService.getUserImageBase64(userId);
-            setImagemBase64(base64);
+            const imageUrl = databaseService.getUserImageUrl(user);
+            
+            if (imageUrl) {
+                setPreviewUrl(imageUrl);
+            } else {
+                setPreviewUrl(null);
+            }
         } catch (error) {
             console.error("Erro ao carregar imagem do usuário:", error);
-            setImagemBase64(null);
+            setPreviewUrl(null);
         } finally {
             setImageLoading(false);
         }
@@ -119,7 +130,6 @@ export default function AddUserModal({
         }
     };
 
-
     const startCamera = async () => {
         try {
             setCameraActive(true);
@@ -154,22 +164,24 @@ export default function AddUserModal({
 
     const capturePhoto = () => {
         if (videoRef.current && canvasRef.current) {
-            const video = videoRef.current;
             const canvas = canvasRef.current;
             const context = canvas.getContext('2d');
 
-            // Configurar canvas com as dimensões do vídeo
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
+            canvas.width = videoRef.current.videoWidth;
+            canvas.height = videoRef.current.videoHeight;
+            context?.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
 
-            // Desenhar o frame atual do vídeo no canvas
-            context?.drawImage(video, 0, 0, canvas.width, canvas.height);
+            // Converter para File (não base64)
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    const file = new File([blob], `photo_${Date.now()}.jpg`, {
+                        type: 'image/jpeg'
+                    });
+                    setImagemFile(file);
+                    setPreviewUrl(URL.createObjectURL(blob));
+                }
+            }, 'image/jpeg', 0.8);
 
-            // Converter para base64
-            const imageData = canvas.toDataURL('image/jpeg', 0.8);
-            setImagemBase64(imageData);
-
-            // Parar a câmera
             stopCamera();
         }
     };
@@ -187,6 +199,7 @@ export default function AddUserModal({
         await startCamera();
     };
 
+    // Salvar File diretamente
     const handleSelectImage = () => {
         const input = document.createElement('input');
         input.type = 'file';
@@ -209,29 +222,30 @@ export default function AddUserModal({
                     return;
                 }
 
-                // Converter para base64
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    if (event.target?.result) {
-                        setImagemBase64(event.target.result as string);
-                    }
-                };
-                reader.onerror = () => {
-                    alert("Erro ao processar a imagem");
-                };
-                reader.readAsDataURL(file);
+                // Salvar o File diretamente
+                setImagemFile(file);
+                
+                // Criar URL para preview
+                const url = URL.createObjectURL(file);
+                setPreviewUrl(url);
             }
         };
 
         input.click();
     };
 
+    // Limpar File e preview
     const handleRemoveImage = () => {
         if (confirm("Deseja realmente remover a imagem?")) {
-            setImagemBase64(null);
+            setImagemFile(null);
+            if (previewUrl) {
+                URL.revokeObjectURL(previewUrl);
+            }
+            setPreviewUrl(null);
         }
     };
 
+    // Submit atualizado para usar sistema de arquivos
     const handleSubmit = async () => {
         // Validações
         if (!formData.nome.trim()) {
@@ -269,8 +283,21 @@ export default function AddUserModal({
                     ...formData,
                     tipo: formData.tipo,
                     identificador: formData.identificador,
-                    imagem_base64: imagemBase64,
                 });
+
+                // Se há uma nova imagem, fazer upload usando o novo sistema
+                if (imagemFile) {
+                    const uploadResult = await databaseService.processAndUploadUserImage(
+                        userToEdit.id,
+                        formData.identificador,
+                        imagemFile
+                    );
+
+                    if (!uploadResult.success) {
+                        console.warn("Aviso: Imagem não foi atualizada:", uploadResult.error);
+                        // Não impedir o sucesso da edição por causa da imagem
+                    }
+                }
 
                 await logUserUpdate(userToEdit, { ...formData, identificador: formData.identificador }, result.success, result.error);
 
@@ -287,8 +314,21 @@ export default function AddUserModal({
                     nome: formData.nome.trim(),
                     tipo: formData.tipo,
                     identificador: formData.identificador.trim(),
-                    imagem_base64: imagemBase64 || undefined,
                 });
+
+                // Se o usuário foi criado com sucesso E há uma imagem, fazer upload
+                if (result.success && result.userId && imagemFile) {
+                    const uploadResult = await databaseService.processAndUploadUserImage(
+                        result.userId,
+                        formData.identificador.trim(),
+                        imagemFile
+                    );
+
+                    if (!uploadResult.success) {
+                        console.warn("Aviso: Imagem não foi enviada:", uploadResult.error);
+                    }
+                }
+
                 await logUserCreation({ ...formData, identificador: formData.identificador.trim() }, result.success, result.error);
 
                 if (result.success) {
@@ -312,7 +352,12 @@ export default function AddUserModal({
         if (cameraActive) {
             stopCamera();
         }
-        setImagemBase64(null);
+        // Limpar URLs de preview
+        if (previewUrl) {
+            URL.revokeObjectURL(previewUrl);
+        }
+        setImagemFile(null);
+        setPreviewUrl(null);
         onClose();
     };
 
@@ -374,11 +419,11 @@ export default function AddUserModal({
                                         </button>
                                     </div>
                                 </div>
-                            ) : imagemBase64 ? (
+                            ) : previewUrl ? (
                                 // Preview da Imagem
                                 <div className="text-center">
                                     <img
-                                        src={imagemBase64}
+                                        src={previewUrl}
                                         alt="Preview"
                                         className="w-30 h-30 rounded-full bg-gray-100 object-cover mb-2 mx-auto"
                                     />

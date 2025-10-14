@@ -167,6 +167,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
               <div className="space-y-3 max-h-[60vh] overflow-y-auto">
                 {filteredUsers.map((user) => (
                   <div key={user.id} className="bg-gray-50 rounded-lg p-4 mb-3 flex items-center justify-between border border-gray-200 shadow-sm">
+                    <img src={user.imagem_url ?? undefined} alt={user.nome} className="w-12 h-12 rounded-full mr-4" />
                     <div className="flex flex-1">
                       <div className="flex-1 pr-2">
                         <div className="text-xs font-semibold text-gray-600 mb-1">Identificador</div>
