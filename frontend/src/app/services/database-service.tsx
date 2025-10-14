@@ -122,65 +122,69 @@ class DatabaseService {
 
   // ==================== NOVAS FUNÇÕES PARA SISTEMA DE ARQUIVOS ====================
 
-  /**
-   * Faz upload da imagem de um usuário como arquivo (NOVO SISTEMA)
-   */
+  // NO MÉTODO uploadUserImageFile - ADICIONE ESTE LOG
   async uploadUserImageFile(userId: number, identificador: string, imageFile: File): Promise<ImageOperationResponse> {
     try {
+      console.log('📤 Iniciando upload - userId:', userId, 'identificador:', identificador, 'file:', imageFile.name, 'size:', imageFile.size);
+
       const formData = new FormData();
       formData.append('image', imageFile);
       formData.append('identificador', identificador);
-      formData.append('userId', userId.toString());
+      // NÃO enviar userId no formData - já está na URL
+
+      console.log('📋 FormData criado, enviando requisição...');
 
       const response = await fetch(`${this.apiBaseUrl}/users/${userId}/image-file`, {
         method: 'PUT',
-        body: formData, // Não definir Content-Type, o browser faz automaticamente
+        body: formData,
       });
 
+      console.log('📡 Resposta recebida - Status:', response.status);
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        let errorText;
+        try {
+          errorText = await response.text();
+          console.error('❌ Erro na resposta:', errorText);
+        } catch {
+          errorText = 'Não foi possível ler a resposta de erro';
+        }
+        throw new Error(`HTTP error! status: ${response.status}, response: ${errorText}`);
       }
 
       const data = await response.json();
-      
-      // Construir URL completa da imagem
-      const imageUrl = `${this.baseUrl}/${data.imagePath}`;
+      console.log('✅ Upload bem-sucedido:', data);
 
       return {
         success: true,
         message: data.message || 'Imagem atualizada com sucesso',
         imagePath: data.imagePath,
-        imageUrl: imageUrl
+        imageUrl: `${this.baseUrl}/${data.imagePath}`
       };
     } catch (error) {
-      console.error('Upload image file error:', error);
+      console.error('💥 Upload image file error:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Erro ao fazer upload da imagem'
       };
     }
   }
-
-  /**
-   * Obtém a URL da imagem do usuário (PRIORIDADE PARA NOVO SISTEMA)
-   */
   getUserImageUrl(user: UsuarioCompleto): string | null {
     // Prioridade para o novo sistema (arquivos)
     if (user.imagem_path) {
       return `${this.baseUrl}/${user.imagem_path}`;
     }
-    
-    // Fallback para sistema antigo (base64)
+
+    // Fallback para sistema antigo (base64) - durante transição
     if (user.imagem_base64) {
       return user.imagem_base64;
     }
-    
+
     // Fallback para endpoint de imagem
     if (user.tem_imagem) {
       return `${this.apiBaseUrl}/users/${user.id}/image`;
     }
-    
+
     return null;
   }
 
@@ -190,10 +194,6 @@ class DatabaseService {
   getUserImageByIdentificador(identificador: string): string {
     return `${this.baseUrl}/assets/users/${identificador}.jpg`;
   }
-
-  /**
-   * Verifica se uma imagem existe pelo identificador
-   */
   async checkUserImageExists(identificador: string): Promise<boolean> {
     try {
       const imageUrl = this.getUserImageByIdentificador(identificador);
@@ -204,24 +204,20 @@ class DatabaseService {
     }
   }
 
-  /**
-   * Processa e faz upload de imagem da câmera/galeria (MELHORADO)
-   */
   async processAndUploadUserImage(
-    userId: number, 
-    identificador: string, 
+    userId: number,
+    identificador: string,
     imageFile: File | Blob,
     fileName: string = 'image.jpg'
   ): Promise<ImageOperationResponse> {
     try {
-      // Se já é um File, usa diretamente
       let fileToUpload: File;
-      
+
       if (imageFile instanceof File) {
         fileToUpload = imageFile;
       } else {
         // Se é Blob, converte para File
-        fileToUpload = new File([imageFile], fileName, { 
+        fileToUpload = new File([imageFile], fileName, {
           type: 'image/jpeg',
           lastModified: Date.now()
         });
@@ -245,11 +241,11 @@ class DatabaseService {
    */
   isValidBase64Image(base64String: string): boolean {
     if (!base64String) return false;
-    
+
     try {
       // Remove o prefixo data URL se existir
       const base64Data = base64String.replace(/^data:image\/\w+;base64,/, '');
-      
+
       // Verifica se é base64 válido
       const regex = /^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?$/;
       if (!regex.test(base64Data)) {
@@ -259,7 +255,7 @@ class DatabaseService {
       // Calcula tamanho aproximado em bytes (base64 é ~33% maior que o original)
       const stringLength = base64Data.length;
       const sizeInBytes = 4 * Math.ceil(stringLength / 3) * 0.5624896334383812;
-      
+
       // Verifica se é menor que 5MB
       return sizeInBytes <= 5 * 1024 * 1024;
     } catch (error) {
@@ -273,16 +269,16 @@ class DatabaseService {
   async fileToBase64(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      
+
       reader.onload = () => {
         const base64 = reader.result as string;
         resolve(base64);
       };
-      
+
       reader.onerror = (error) => {
         reject(new Error('Falha ao ler arquivo: ' + error));
       };
-      
+
       reader.readAsDataURL(file);
     });
   }
@@ -293,11 +289,11 @@ class DatabaseService {
   async processImageForUpload(file: File): Promise<string> {
     try {
       const base64String = await this.fileToBase64(file);
-      
+
       if (!this.isValidBase64Image(base64String)) {
         throw new Error('Imagem inválida ou muito grande (máximo 5MB)');
       }
-      
+
       return base64String;
     } catch (error) {
       console.error('Erro ao processar imagem:', error);
@@ -402,7 +398,7 @@ class DatabaseService {
     try {
       const response = await this.makeRequest('/users');
       const users = response.users || [];
-      
+
       // Adicionar URLs das imagens para todos os usuários
       return users.map((user: UsuarioCompleto) => ({
         ...user,
@@ -418,7 +414,7 @@ class DatabaseService {
     try {
       const endpoint = incluirImagem ? `/users/${id}?incluir_imagem=true` : `/users/${id}`;
       const response = await this.makeRequest(endpoint);
-      
+
       if (!response.user) {
         return null;
       }
@@ -426,7 +422,7 @@ class DatabaseService {
       // Adicionar URL da imagem se disponível
       const user = response.user;
       user.imagem_url = this.getUserImageUrl(user);
-      
+
       return user;
     } catch (error) {
       console.error('Get user by id error:', error);
@@ -465,9 +461,9 @@ class DatabaseService {
   async updateUser(id: number, userData: Partial<UsuarioCompleto & { imagem_base64?: string | null }>): Promise<{ success: boolean; user?: UsuarioCompleto; error?: string }> {
     try {
       // Validar imagem se for fornecida (sistema antigo)
-      if (userData.imagem_base64 !== undefined && 
-          userData.imagem_base64 !== null && 
-          !this.isValidBase64Image(userData.imagem_base64)) {
+      if (userData.imagem_base64 !== undefined &&
+        userData.imagem_base64 !== null &&
+        !this.isValidBase64Image(userData.imagem_base64)) {
         return {
           success: false,
           error: 'Imagem inválida ou muito grande (máximo 5MB)'

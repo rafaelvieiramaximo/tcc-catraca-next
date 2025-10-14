@@ -22,8 +22,8 @@ export default function AddUserModal({
         nome: userToEdit?.nome || "",
         identificador: userToEdit?.identificador.toString() || "",
     });
-    const [imagemFile, setImagemFile] = useState<File | null>(null); // MUDANÇA: File em vez de base64
-    const [previewUrl, setPreviewUrl] = useState<string | null>(null); // MUDANÇA: URL para preview
+    const [imagemFile, setImagemFile] = useState<File | null>(null);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [imageLoading, setImageLoading] = useState(false);
     const [cameraActive, setCameraActive] = useState(false);
@@ -69,7 +69,7 @@ export default function AddUserModal({
         };
     }, []);
 
-    // MUDANÇA: Carregar imagem usando o novo sistema
+    // Carregar imagem usando o novo sistema
     const loadUserImage = async (user: UsuarioCompleto) => {
         try {
             setImageLoading(true);
@@ -162,38 +162,26 @@ export default function AddUserModal({
         setCameraActive(false);
     };
 
-    // MUDANÇA: Capturar foto e salvar como File/Blob
     const capturePhoto = () => {
         if (videoRef.current && canvasRef.current) {
-            const video = videoRef.current;
             const canvas = canvasRef.current;
             const context = canvas.getContext('2d');
 
-            // Configurar canvas com as dimensões do vídeo
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
+            canvas.width = videoRef.current.videoWidth;
+            canvas.height = videoRef.current.videoHeight;
+            context?.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
 
-            // Desenhar o frame atual do vídeo no canvas
-            context?.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-            // Converter para Blob e depois para File
+            // Converter para File (não base64)
             canvas.toBlob((blob) => {
                 if (blob) {
-                    // Criar um File a partir do Blob
-                    const file = new File([blob], `photo_${Date.now()}.jpg`, { 
-                        type: 'image/jpeg',
-                        lastModified: Date.now()
+                    const file = new File([blob], `photo_${Date.now()}.jpg`, {
+                        type: 'image/jpeg'
                     });
-                    
                     setImagemFile(file);
-                    
-                    // Criar URL para preview
-                    const url = URL.createObjectURL(blob);
-                    setPreviewUrl(url);
+                    setPreviewUrl(URL.createObjectURL(blob));
                 }
             }, 'image/jpeg', 0.8);
 
-            // Parar a câmera
             stopCamera();
         }
     };
@@ -211,7 +199,7 @@ export default function AddUserModal({
         await startCamera();
     };
 
-    // MUDANÇA: Salvar File diretamente
+    // Salvar File diretamente
     const handleSelectImage = () => {
         const input = document.createElement('input');
         input.type = 'file';
@@ -246,7 +234,7 @@ export default function AddUserModal({
         input.click();
     };
 
-    // MUDANÇA: Limpar File e preview
+    // Limpar File e preview
     const handleRemoveImage = () => {
         if (confirm("Deseja realmente remover a imagem?")) {
             setImagemFile(null);
@@ -257,7 +245,7 @@ export default function AddUserModal({
         }
     };
 
-    // MUDANÇA: Submit atualizado para usar sistema de arquivos
+    // Submit atualizado para usar sistema de arquivos
     const handleSubmit = async () => {
         // Validações
         if (!formData.nome.trim()) {
@@ -295,7 +283,6 @@ export default function AddUserModal({
                     ...formData,
                     tipo: formData.tipo,
                     identificador: formData.identificador,
-                    // NÃO enviar imagem_base64 aqui - será feito separadamente
                 });
 
                 // Se há uma nova imagem, fazer upload usando o novo sistema
@@ -303,8 +290,7 @@ export default function AddUserModal({
                     const uploadResult = await databaseService.processAndUploadUserImage(
                         userToEdit.id,
                         formData.identificador,
-                        imagemFile,
-                        `${formData.identificador}.jpg`
+                        imagemFile
                     );
 
                     if (!uploadResult.success) {
@@ -328,7 +314,6 @@ export default function AddUserModal({
                     nome: formData.nome.trim(),
                     tipo: formData.tipo,
                     identificador: formData.identificador.trim(),
-                    // NÃO enviar imagem_base64 aqui - será feito separadamente
                 });
 
                 // Se o usuário foi criado com sucesso E há uma imagem, fazer upload
@@ -336,13 +321,11 @@ export default function AddUserModal({
                     const uploadResult = await databaseService.processAndUploadUserImage(
                         result.userId,
                         formData.identificador.trim(),
-                        imagemFile,
-                        `${formData.identificador.trim()}.jpg`
+                        imagemFile
                     );
 
                     if (!uploadResult.success) {
                         console.warn("Aviso: Imagem não foi enviada:", uploadResult.error);
-                        // Não impedir o sucesso da criação por causa da imagem
                     }
                 }
 
