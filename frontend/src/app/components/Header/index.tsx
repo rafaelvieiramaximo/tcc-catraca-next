@@ -39,7 +39,6 @@ export default function Header({ onLogout, pageName, user }: HeaderProps) {
           {user && (
             <div className="text-right text-white">
               <p className="font-semibold">{formatUserName(user.nome)}</p>
-              <p className="text-sm opacity-90 capitalize">{user.tipo.toLowerCase()}</p>
             </div>
           )}
           

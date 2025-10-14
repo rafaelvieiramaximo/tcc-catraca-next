@@ -8,7 +8,6 @@ import LoadingScreen from '../components/loadingScreen';
 export default function AdminPage() {
   const { currentUser, handleLogout, loading } = useAppAuth();
 
-  // Mostra loading enquanto verifica autenticação
   if (loading) {
     return <LoadingScreen />;
   }
