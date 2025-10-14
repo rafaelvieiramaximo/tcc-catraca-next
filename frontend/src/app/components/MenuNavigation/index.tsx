@@ -14,7 +14,7 @@ export default function MenuNavigation({ currentPath }: MenuNavigationProps) {
     { label: 'HOME', path: '/admin' },
     { label: 'LOGS DE AÇÕES', path: '/admin/action-logs' },
     { label: 'LOGS DE ENTRADAS', path: '/entry-logs' },
-    { label: 'GERENCIAMENTO DE USUÁRIOS', path: '/admin/user-management' },
+    { label: 'GERENCIAMENTO DE USUÁRIOS', path: '/usermanage' },
   ];
 
   const isActive = (path: string) => {

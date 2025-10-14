@@ -1,4 +1,3 @@
-// app/components/UserManagement/page.tsx
 'use client';
 
 import React, { useState, useEffect } from "react";
@@ -119,7 +118,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
     return (
       <div className="min-h-screen bg-gray-50">
         <Header onLogout={handleLogout} pageName="Gerenciador de Usuários" user={user} />
-        <MenuNavigation currentPath="/admin/user-management" />
+        <MenuNavigation currentPath="/usermanage" />
         <div className="flex-1 flex flex-col items-center justify-center p-10">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#4A90A4]"></div>
           <div className="mt-3 text-base text-gray-600">Carregando usuários...</div>
@@ -133,7 +132,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
       {/* Aplica blur apenas no conteúdo quando modal estiver aberto */}
       <div className={showAddModal ? 'blur-xs' : ''}>
         <Header onLogout={handleLogout} pageName="Gerenciador de Usuários" user={user} />
-        <MenuNavigation currentPath="/admin/user-management" />
+        <MenuNavigation currentPath="/usermanage" />
 
         <div className="flex-1 p-4">
           {/* Search Bar */}
