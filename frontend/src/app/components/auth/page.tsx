@@ -61,8 +61,8 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
   };
 
   const handleFillTestData = () => {
-    setIdentificador(tipo === "ADMIN" ? "1000" : "PORT001");
-    setSenha(tipo === "ADMIN" ? "admin123" : "portaria123");
+    setIdentificador(tipo === "ADMIN" ? "1000" : tipo === "PORTARIA" ? "PORT001" : "RH001");
+    setSenha(tipo === "ADMIN" ? "admin123" : tipo === "PORTARIA" ? "portaria123" : "recursos456");
     setError(null);
   };
 
@@ -72,6 +72,8 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
         return "ADMINISTRADOR - SISTEMA";
       case "PORTARIA":
         return "PORTARIA - CONTROLE";
+      case "RH":
+        return "RECURSOS HUMANOS - CONTROLE";
       default:
         return "SISTEMA DE ACESSO";
     }
@@ -83,6 +85,8 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
         return "Informe seu ID de administrador";
       case "PORTARIA":
         return "Informe seu usuário da portaria";
+      case "RH":
+        return "Informe seu usuário do rh";
       default:
         return "Identificador";
     }
@@ -128,6 +132,17 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
           >
             <span className={`type-button-text ${tipo === "PORTARIA" ? "type-button-text-active" : ""}`}>
               Portaria
+            </span>
+          </button>
+
+          <button
+            className={`type-button ${tipo === "RH" ? "type-button-active" : ""}`}
+            onClick={() => setTipo("RH")}
+            disabled={loading}
+            type="button"
+          >
+            <span className={`type-button-text ${tipo === "RH" ? "type-button-text-active" : ""}`}>
+              Recursos Humanos
             </span>
           </button>
         </div>

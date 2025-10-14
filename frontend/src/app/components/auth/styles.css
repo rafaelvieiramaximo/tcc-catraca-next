@@ -15,8 +15,8 @@
   background-color: #FFFFFF;
   border-radius: 16px;
   padding: 24px;
-  width: 90%;
-  max-width: 400px;
+  width: 100%;
+  max-width: 450px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
@@ -89,7 +89,11 @@
 
 .type-button:hover:not(:disabled) {
   background-color: #627a90;
-  color:#E9ECEF
+  color: #ffffff;
+}
+
+.type-button:hover:not(:disabled) .type-button-text {
+  color: #ffffff !important;
 }
 
 .type-button-active {
