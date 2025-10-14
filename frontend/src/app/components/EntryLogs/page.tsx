@@ -102,6 +102,7 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
     }
   };
 
+  // ...existing code...
   const handleGeneratePDF = async () => {
     if (filteredLogs.length === 0) {
       alert("Não há dados para exportar");
@@ -110,49 +111,71 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
 
     setGeneratingPDF(true);
     try {
-      // Criar novo documento PDF
+      const getImageDataUrl = async (url: string) => {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Erro ao carregar imagem');
+        const blob = await res.blob();
+        return await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      };
+
+      let logoDataUrl: string | null = null;
+      try {
+        logoDataUrl = await getImageDataUrl('/assets/images/logo_fatec.png');
+      } catch (err) {
+        console.warn('Não foi possível carregar logo para o PDF:', err);
+        logoDataUrl = null;
+      }
+
       const doc = new jsPDF();
-      
-      // Adicionar título
+
+      const headerHeight = 30;
+      const startY = headerHeight + 5;
+
+      if (logoDataUrl) {
+        doc.addImage(logoDataUrl, 'PNG', 14, 8, 28, 14);
+      }
       doc.setFontSize(16);
       doc.setTextColor(44, 95, 105); // #2C5F69
-      doc.text("Relatório de Logs de Entrada - FATEC", 14, 15);
-      
-      // Adicionar informações dos filtros aplicados
+      doc.text("Relatório de Logs de Entrada - FATEC", 50, 16);
+
+      // Informações de geração (após cabeçalho)
       doc.setFontSize(10);
       doc.setTextColor(0, 0, 0);
-      
-      let yPosition = 25;
-      
-      // Informações de data/hora da geração
+
+      let yPosition = startY;
+
       const now = new Date();
       doc.text(`Relatório gerado em: ${now.toLocaleString('pt-BR')}`, 14, yPosition);
       yPosition += 5;
-      
-      // Filtros aplicados
+
       doc.text("Filtros aplicados:", 14, yPosition);
       yPosition += 5;
-      
+
       if (filtros.searchTerm) {
         doc.text(`• Pesquisa: "${filtros.searchTerm}"`, 20, yPosition);
         yPosition += 4;
       }
-      
+
       if (filtros.hoje) {
         doc.text(`• Filtro: Hoje`, 20, yPosition);
         yPosition += 4;
       }
-      
+
       if (filtros.periodo) {
         doc.text(`• Período: ${filtros.periodo}`, 20, yPosition);
         yPosition += 4;
       }
-      
+
       if (filtros.tipo) {
         doc.text(`• Tipo: ${filtros.tipo}`, 20, yPosition);
         yPosition += 4;
       }
-      
+
       if (filtros.filterType) {
         const filterTypeText = {
           data: "Data específica",
@@ -162,12 +185,10 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
         doc.text(`• Tipo de filtro: ${filterTypeText}`, 20, yPosition);
         yPosition += 4;
       }
-      
-      // Total de registros
+
       doc.text(`• Total de registros: ${filteredLogs.length}`, 20, yPosition);
       yPosition += 8;
 
-      // Preparar dados da tabela
       const tableData = filteredLogs.map((log, index) => [
         (index + 1).toString(),
         log.identificador,
@@ -179,7 +200,7 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
         controle(log)
       ]);
 
-      // Adicionar tabela
+      // Adicionar tabela com autoTable — incluir cabeçalho/rodapé por página
       autoTable(doc, {
         head: [['#', 'Identificador', 'Nome', 'Tipo', 'Data', 'Horário', 'Período', 'Controle']],
         body: tableData,
@@ -189,7 +210,7 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
           cellPadding: 2,
         },
         headStyles: {
-          fillColor: [44, 95, 105], // #2C5F69
+          fillColor: [44, 95, 105],
           textColor: 255,
           fontStyle: 'bold'
         },
@@ -197,20 +218,29 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
           fillColor: [240, 240, 240]
         },
         columnStyles: {
-          0: { cellWidth: 10 }, // #
-          1: { cellWidth: 25 }, // Identificador
-          2: { cellWidth: 35 }, // Nome
-          3: { cellWidth: 25 }, // Tipo
-          4: { cellWidth: 25 }, // Data
-          5: { cellWidth: 20 }, // Horário
-          6: { cellWidth: 25 }, // Período
-          7: { cellWidth: 20 }, // Controle
+          0: { cellWidth: 10 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 35 },
+          3: { cellWidth: 25 },
+          4: { cellWidth: 25 },
+          5: { cellWidth: 20 },
+          6: { cellWidth: 25 },
+          7: { cellWidth: 20 },
         },
-        margin: { top: 10 },
+        margin: { top: headerHeight },
         didDrawPage: function (data) {
-          // Adicionar número da página
+          // cabeçalho por página (imagem + título)
+          if (logoDataUrl) {
+            doc.addImage(logoDataUrl, 'PNG', 14, 8, 28, 14);
+          }
+          doc.setFontSize(16);
+          doc.setTextColor(44, 95, 105);
+          doc.text("Relatório de Logs de Entrada - FATEC", 50, 16);
+
+          // rodapé: número de página
           const pageCount = doc.getNumberOfPages();
           doc.setFontSize(8);
+          doc.setTextColor(100);
           doc.text(
             `Página ${data.pageNumber} de ${pageCount}`,
             doc.internal.pageSize.getWidth() / 2,
@@ -220,9 +250,11 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
         }
       });
 
-      // Salvar o PDF
-      const fileName = `logs_entrada_${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours()}${now.getMinutes()}.pdf`;
-      doc.save(fileName);
+      const pdfBlob = doc.output('blob');
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      window.open(pdfUrl, '_blank');
+      // revogar URL após um minuto para liberar memória
+      setTimeout(() => URL.revokeObjectURL(pdfUrl), 60_000);
 
     } catch (error) {
       console.error("Erro ao gerar PDF:", error);
@@ -231,6 +263,7 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
       setGeneratingPDF(false);
     }
   };
+  // ...existing code...
 
   const filteredLogs = logs.filter((log) => {
     if (!filtros.searchTerm) return true;
@@ -318,11 +351,10 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
                     {["data", "periodo", "dia"].map((type) => (
                       <button
                         key={type}
-                        className={`px-3 py-2 rounded-full text-sm font-medium border ${
-                          filtros.filterType === type
-                            ? "bg-[#4A90A4] text-white border-[#3A7A8C]"
-                            : "bg-gray-100 text-gray-700 border-gray-300"
-                        }`}
+                        className={`px-3 py-2 rounded-full text-sm font-medium border ${filtros.filterType === type
+                          ? "bg-[#4A90A4] text-white border-[#3A7A8C]"
+                          : "bg-gray-100 text-gray-700 border-gray-300"
+                          }`}
                         onClick={() => setFiltros(prev => ({ ...prev, filterType: type as any }))}
                       >
                         {type === "data" ? "Data" : type === "periodo" ? "Período" : "Dia"}
@@ -374,11 +406,10 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
           </span>
 
           <button
-            className={`flex items-center px-4 py-2 rounded text-sm font-medium ${
-              generatingPDF || filteredLogs.length === 0
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-green-800 hover:bg-green-700"
-            } text-white transition-colors`}
+            className={`flex items-center px-4 py-2 rounded text-sm font-medium ${generatingPDF || filteredLogs.length === 0
+              ? "bg-gray-400 cursor-not-allowed"
+              : "bg-green-800 hover:bg-green-700"
+              } text-white transition-colors`}
             onClick={handleGeneratePDF}
             disabled={generatingPDF || filteredLogs.length === 0}
           >
