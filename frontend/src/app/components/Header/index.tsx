@@ -26,7 +26,6 @@ export default function Header({ onLogout, pageName, user }: HeaderProps) {
   return (
     <header className="bg-[#2C5F69] py-4 px-6 shadow-md">
       <div className="flex justify-between items-center">
-        {/* Logo e Nome do Sistema */}
         <div className="flex items-center space-x-4">
           <div className="text-white">
             <h1 className="text-xl font-bold">{pageName}</h1>
@@ -34,11 +33,10 @@ export default function Header({ onLogout, pageName, user }: HeaderProps) {
           </div>
         </div>
 
-        {/* User Info and Logout */}
         <div className="flex items-center space-x-4">
           {user && (
             <div className="text-right text-white">
-              <p className="font-semibold">{formatUserName(user.nome)}</p>
+              <p className="font-semibold">{user.nome}</p>
             </div>
           )}
           
