@@ -277,7 +277,7 @@ const filteredLogs = logs.filter((log) => {
 
             <input
               type="text"
-              className="flex-1 mx-2 p-2 text-gray-700 focus:outline-none"
+              className="flex-1 mx-2 p-2 text-gray-700 focus:outline-none border border-gray-300 rounded"
               placeholder="Pesquisar por usuário, ação ou detalhes..."
               value={filtros.searchTerm}
               onChange={(e) =>
@@ -289,11 +289,9 @@ const filteredLogs = logs.filter((log) => {
               className="p-2 text-gray-600 text-xl"
               onClick={applyFilters}
             >
-              🔍
             </button>
           </div>
 
-          {/* Filtros expandíveis */}
           {showFilters && (
             <div className="bg-white rounded-lg shadow-sm p-4 mt-3">
               <h3 className="text-gray-800 text-base font-semibold mb-3">Filtros Avançados:</h3>

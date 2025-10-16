@@ -18,11 +18,22 @@ interface EntryLogsProps {
 
 interface FiltrosState {
   searchTerm: string;
-  filterType: "data" | "periodo" | "dia";
+  filterType: "hoje" | "data-especifica" | "range-datas" | "periodo-rapido";
   hoje: boolean;
   periodo: string;
   tipo: string;
   usuario_id?: number;
+
+  // Novos campos
+  dataEspecifica: string;
+  dataInicio: string;
+  dataFim: string;
+  periodoRapido: "semana" | "quinzena" | "mes" | "";
+  periodosDia: {
+    manha: boolean;
+    tarde: boolean;
+    noite: boolean;
+  };
 }
 
 export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
@@ -30,10 +41,19 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
   const [loading, setLoading] = useState<boolean>(false);
   const [filtros, setFiltros] = useState<FiltrosState>({
     searchTerm: "",
-    filterType: "data",
+    filterType: "hoje",
     hoje: false,
     periodo: "",
     tipo: "",
+    dataEspecifica: "",
+    dataInicio: "",
+    dataFim: "",
+    periodoRapido: "",
+    periodosDia: {
+      manha: true,
+      tarde: true,
+      noite: true
+    }
   });
   const [limit] = useState<number>(100);
   const [offset, setOffset] = useState<number>(0);
@@ -77,19 +97,50 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
     }
   };
 
+  // Nova função para carregar todos os logs para filtros locais
+  const loadAllLogs = async () => {
+    setLoading(true);
+    try {
+      const logsData = await databaseService.getLogsEntrada(10000, 0, {});
+      setLogs(logsData);
+      setOffset(0);
+    } catch (error) {
+      alert("Não foi possível carregar os logs");
+      console.error("Erro ao carregar logs:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const applyFilters = async () => {
     setOffset(0);
-    await loadLogs(0);
+
+    // Se for filtro "hoje", usa o backend
+    if (filtros.filterType === "hoje" && filtros.hoje) {
+      await loadLogs(0);
+    } else {
+      // Para outros filtros, carrega tudo e filtra no frontend
+      await loadAllLogs();
+    }
     setShowFilters(false);
   };
 
   const resetFilters = () => {
     setFiltros({
       searchTerm: "",
-      filterType: "data",
+      filterType: "hoje",
       hoje: false,
       periodo: "",
       tipo: "",
+      dataEspecifica: "",
+      dataInicio: "",
+      dataFim: "",
+      periodoRapido: "",
+      periodosDia: {
+        manha: true,
+        tarde: true,
+        noite: true
+      }
     });
     setOffset(0);
     loadLogs(0);
@@ -102,7 +153,80 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
     }
   };
 
-  // ...existing code...
+  // Filtragem local avançada
+  const filteredLogs = logs.filter((log) => {
+    // Filtro de busca por nome/ID
+    if (filtros.searchTerm && !(
+      log.nome.toLowerCase().includes(filtros.searchTerm.toLowerCase()) ||
+      log.identificador.toString().includes(filtros.searchTerm)
+    )) {
+      return false;
+    }
+
+    if (filtros.filterType === "data-especifica" && filtros.dataEspecifica) {
+      const logDate = new Date(log.data_entrada);
+      const logDateFormatted = logDate.toISOString().split('T')[0];
+
+      if (logDateFormatted !== filtros.dataEspecifica) {
+        return false;
+      }
+    }
+
+    // Filtro por range de datas
+    if (filtros.filterType === "range-datas" && filtros.dataInicio && filtros.dataFim) {
+      const logDate = new Date(log.data_entrada);
+      const logDateFormatted = logDate.toISOString().split('T')[0];
+
+      if (logDateFormatted < filtros.dataInicio || logDateFormatted > filtros.dataFim) {
+        return false;
+      }
+    }
+
+    // Filtro por período rápido
+    if (filtros.filterType === "periodo-rapido" && filtros.periodoRapido) {
+      const logDate = new Date(log.data_entrada);
+      const today = new Date();
+
+      switch (filtros.periodoRapido) {
+        case "semana":
+          const weekAgo = new Date(today);
+          weekAgo.setDate(today.getDate() - 6); // 6 dias atrás + hoje = 7 dias
+          if (logDate < weekAgo) return false;
+          break;
+
+        case "quinzena":
+          const fortnightAgo = new Date(today);
+          fortnightAgo.setDate(today.getDate() - 14); // 14 dias atrás + hoje = 15 dias
+          if (logDate < fortnightAgo) return false;
+          break;
+
+        case "mes":
+          const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+          if (logDate < firstDayOfMonth) return false;
+          break;
+      }
+    }
+
+    if (!filtros.periodosDia.manha && !filtros.periodosDia.tarde && !filtros.periodosDia.noite) {
+      return false;
+    }
+
+    const hora = parseInt(log.horario.split(':')[0]);
+    const isManha = hora >= 5 && hora < 12;
+    const isTarde = hora >= 12 && hora < 19;
+    const isNoite = hora >= 19 || hora < 5;
+
+    if (
+      (isManha && !filtros.periodosDia.manha) ||
+      (isTarde && !filtros.periodosDia.tarde) ||
+      (isNoite && !filtros.periodosDia.noite)
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+
   const handleGeneratePDF = async () => {
     if (filteredLogs.length === 0) {
       alert("Não há dados para exportar");
@@ -176,13 +300,35 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
         yPosition += 4;
       }
 
-      if (filtros.filterType) {
-        const filterTypeText = {
-          data: "Data específica",
-          periodo: "Período",
-          dia: "Dia"
-        }[filtros.filterType];
-        doc.text(`• Tipo de filtro: ${filterTypeText}`, 20, yPosition);
+      // Novos filtros no PDF
+      if (filtros.filterType === "data-especifica" && filtros.dataEspecifica) {
+        doc.text(`• Data específica: ${new Date(filtros.dataEspecifica).toLocaleDateString('pt-BR')}`, 20, yPosition);
+        yPosition += 4;
+      }
+
+      if (filtros.filterType === "range-datas" && filtros.dataInicio && filtros.dataFim) {
+        doc.text(`• Range: ${new Date(filtros.dataInicio).toLocaleDateString('pt-BR')} à ${new Date(filtros.dataFim).toLocaleDateString('pt-BR')}`, 20, yPosition);
+        yPosition += 4;
+      }
+
+      if (filtros.filterType === "periodo-rapido" && filtros.periodoRapido) {
+        const periodoText = {
+          semana: "Esta Semana",
+          quinzena: "Esta Quinzena",
+          mes: "Este Mês"
+        }[filtros.periodoRapido];
+        doc.text(`• Período rápido: ${periodoText}`, 20, yPosition);
+        yPosition += 4;
+      }
+
+      // Períodos do dia selecionados
+      const periodosSelecionados = [];
+      if (filtros.periodosDia.manha) periodosSelecionados.push("Manhã");
+      if (filtros.periodosDia.tarde) periodosSelecionados.push("Tarde");
+      if (filtros.periodosDia.noite) periodosSelecionados.push("Noite");
+
+      if (periodosSelecionados.length > 0) {
+        doc.text(`• Períodos do dia: ${periodosSelecionados.join(', ')}`, 20, yPosition);
         yPosition += 4;
       }
 
@@ -263,15 +409,6 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
       setGeneratingPDF(false);
     }
   };
-  // ...existing code...
-
-  const filteredLogs = logs.filter((log) => {
-    if (!filtros.searchTerm) return true;
-    return (
-      log.nome.toLowerCase().includes(filtros.searchTerm.toLowerCase()) ||
-      log.usuario_id.toString().includes(filtros.searchTerm)
-    );
-  });
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -316,10 +453,10 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
         <div className="mb-4">
           <div className="flex items-center bg-white rounded-lg shadow-sm px-4 py-2">
             <button
-              className="p-2 text-[#4A90A4] font-medium mr-2"
+              className="p-2 text-[#4A90A4] font-medium mr-2 cursor-pointer hover:bg-gray-100 rounded"
               onClick={() => setShowFilters(!showFilters)}
             >
-              ☰ Filtros
+              ☰ Filtros Avançados
             </button>
 
             <input
@@ -342,57 +479,168 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
           {/* Filtros Expandíveis */}
           {showFilters && (
             <div className="bg-white rounded-lg shadow-sm p-4 mt-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                {/* Tipo de Filtro Principal */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-semibold text-gray-700 mb-3">
                     Tipo de Filtro
                   </label>
-                  <div className="flex flex-wrap gap-2">
-                    {["data", "periodo", "dia"].map((type) => (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {[
+                      { value: "hoje", label: "Hoje" },
+                      { value: "data-especifica", label: "Data Específica" },
+                      { value: "range-datas", label: "Range de Datas" },
+                      { value: "periodo-rapido", label: "Período Rápido" }
+                    ].map((type) => (
                       <button
-                        key={type}
-                        className={`px-3 py-2 rounded-full text-sm font-medium border ${filtros.filterType === type
+                        key={type.value}
+                        className={`px-3 py-2 rounded text-sm font-medium border ${filtros.filterType === type.value
                           ? "bg-[#4A90A4] text-white border-[#3A7A8C]"
-                          : "bg-gray-100 text-gray-700 border-gray-300"
+                          : "bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200"
                           }`}
-                        onClick={() => setFiltros(prev => ({ ...prev, filterType: type as any }))}
+                        onClick={() => setFiltros(prev => ({
+                          ...prev,
+                          filterType: type.value as any
+                        }))}
                       >
-                        {type === "data" ? "Data" : type === "periodo" ? "Período" : "Dia"}
+                        {type.label}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Opções
-                  </label>
-                  <div className="flex items-center space-x-4">
+                {/* Filtro Hoje */}
+                {filtros.filterType === "hoje" && (
+                  <div className="md:col-span-2">
                     <label className="flex items-center">
                       <input
                         type="checkbox"
                         checked={filtros.hoje}
                         onChange={(e) => setFiltros(prev => ({ ...prev, hoje: e.target.checked }))}
-                        className="mr-2"
+                        className="mr-2 w-4 h-4"
                       />
-                      <span className="text-sm text-gray-700">Hoje</span>
+                      <span className="text-sm text-gray-700 font-medium">Filtrar por hoje</span>
                     </label>
+                  </div>
+                )}
+
+                {/* Data Específica */}
+                {filtros.filterType === "data-especifica" && (
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Data Específica
+                    </label>
+                    <input
+                      type="date"
+                      value={filtros.dataEspecifica}
+                      onChange={(e) => setFiltros(prev => ({ ...prev, dataEspecifica: e.target.value }))}
+                      className="w-full p-2 border border-gray-300 rounded-md"
+                    />
+                  </div>
+                )}
+
+                {/* Range de Datas */}
+                {filtros.filterType === "range-datas" && (
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Range de Datas
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">De:</label>
+                        <input
+                          type="date"
+                          value={filtros.dataInicio}
+                          onChange={(e) => setFiltros(prev => ({ ...prev, dataInicio: e.target.value }))}
+                          className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">Até:</label>
+                        <input
+                          type="date"
+                          value={filtros.dataFim}
+                          onChange={(e) => setFiltros(prev => ({ ...prev, dataFim: e.target.value }))}
+                          className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Período Rápido */}
+                {filtros.filterType === "periodo-rapido" && (
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Período Rápido
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                      {[
+                        { value: "semana", label: "Esta Semana" },
+                        { value: "quinzena", label: "Esta Quinzena" },
+                        { value: "mes", label: "Este Mês" }
+                      ].map((periodo) => (
+                        <button
+                          key={periodo.value}
+                          className={`px-3 py-2 rounded text-sm font-medium border ${filtros.periodoRapido === periodo.value
+                            ? "bg-[#4A90A4] text-white border-[#3A7A8C]"
+                            : "bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200"
+                            }`}
+                          onClick={() => setFiltros(prev => ({
+                            ...prev,
+                            periodoRapido: periodo.value as any
+                          }))}
+                        >
+                          {periodo.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Períodos do Dia */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Períodos do Dia
+                  </label>
+                  <div className="flex flex-wrap gap-4">
+                    {[
+                      { key: "manha", label: "Manhã (05:00 - 12:00)" },
+                      { key: "tarde", label: "Tarde (12:01 - 18:59)" },
+                      { key: "noite", label: "Noite (19:00 - 04:59)" }
+                    ].map((periodo) => (
+                      <label key={periodo.key} className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={filtros.periodosDia[periodo.key as keyof typeof filtros.periodosDia]}
+                          onChange={(e) => setFiltros(prev => ({
+                            ...prev,
+                            periodosDia: {
+                              ...prev.periodosDia,
+                              [periodo.key]: e.target.checked
+                            }
+                          }))}
+                          className="mr-2 w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-700">{periodo.label}</span>
+                      </label>
+                    ))}
                   </div>
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-3">
+              <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
                 <button
-                  className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm font-semibold"
+                  className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm font-semibold transition-colors"
                   onClick={resetFilters}
                 >
-                  Limpar
+                  Limpar Tudo
                 </button>
                 <button
-                  className="bg-[#4A90A4] hover:bg-[#3A7A8C] text-white px-4 py-2 rounded text-sm font-semibold"
+                  className="bg-[#4A90A4] hover:bg-[#3A7A8C] text-white px-4 py-2 rounded text-sm font-semibold transition-colors"
                   onClick={applyFilters}
                 >
-                  Aplicar
+                  Aplicar Filtros
                 </button>
               </div>
             </div>

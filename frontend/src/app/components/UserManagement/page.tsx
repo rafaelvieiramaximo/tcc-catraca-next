@@ -190,7 +190,6 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
             </button>
           </div>
 
-          {/* Users List - MODIFICADO COM SCROLL */}
           <div className="bg-white rounded-lg p-4 mb-4 shadow-sm border">
             {filteredUsers.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-10">
