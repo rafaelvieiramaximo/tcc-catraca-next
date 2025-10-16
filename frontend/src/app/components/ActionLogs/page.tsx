@@ -16,8 +16,11 @@ interface ActionLogsProps {
 
 interface FiltrosState {
   searchTerm: string;
-  dataInicio?: string;
-  dataFim?: string;
+  filterType: "todos" | "data-especifica" | "range-datas" | "periodo-rapido";
+  dataEspecifica: string;
+  dataInicio: string;
+  dataFim: string;
+  periodoRapido: "semana" | "quinzena" | "mes" | "";
   acao?: string;
   usuario_id?: number;
 }
@@ -27,13 +30,18 @@ export default function ActionLogs({ onLogout, user }: ActionLogsProps) {
   const [loading, setLoading] = useState<boolean>(false);
   const [filtros, setFiltros] = useState<FiltrosState>({
     searchTerm: "",
+    filterType: "todos", // Mudei para "todos" como padrão
+    dataEspecifica: "",
+    dataInicio: "",
+    dataFim: "",
+    periodoRapido: "",
+    acao: "",
   });
-  const [limit, setLimit] = useState<number>(100);
+  const [limit] = useState<number>(100);
   const [offset, setOffset] = useState<number>(0);
   const [showFilters, setShowFilters] = useState<boolean>(false);
   const [generatingPDF, setGeneratingPDF] = useState<boolean>(false);
 
-  // Opções para o select de ações
   const acoesOptions = [
     { label: "Selecione uma ação", value: "" },
     { label: "CRIAR_USUARIO", value: "CRIAR_USUARIO" },
@@ -51,7 +59,11 @@ export default function ActionLogs({ onLogout, user }: ActionLogsProps) {
       // Preparar filtros para a API
       const filtrosAPI: any = {};
 
-      if (filtros.dataInicio) filtrosAPI.data_acao = filtros.dataInicio;
+      // Para filtro "data-especifica" - usar backend
+      if (filtros.filterType === "data-especifica" && filtros.dataEspecifica) {
+        filtrosAPI.data_acao = filtros.dataEspecifica;
+      }
+
       if (filtros.acao) filtrosAPI.acao = filtros.acao;
       if (filtros.usuario_id) filtrosAPI.usuario_id = filtros.usuario_id;
 
@@ -76,17 +88,43 @@ export default function ActionLogs({ onLogout, user }: ActionLogsProps) {
     }
   };
 
+  // Nova função para carregar todos os logs para filtros locais
+  const loadAllLogs = async () => {
+    setLoading(true);
+    try {
+      const logsData = await databaseService.getActionLogs(10000, 0, {});
+      setLogs(logsData);
+      setOffset(0);
+    } catch (error) {
+      alert("Não foi possível carregar os logs");
+      console.error("Erro ao carregar logs:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const applyFilters = async () => {
     setOffset(0);
-    await loadLogs(0);
+
+    // Se for filtro "todos" ou "data-especifica", usa o backend
+    if (filtros.filterType === "todos" ||
+      (filtros.filterType === "data-especifica" && filtros.dataEspecifica)) {
+      await loadLogs(0);
+    } else {
+      // Para outros filtros, carrega tudo e filtra no frontend
+      await loadAllLogs();
+    }
     setShowFilters(false);
   };
 
   const resetFilters = () => {
     setFiltros({
       searchTerm: "",
+      filterType: "todos", // Mudei para "todos"
+      dataEspecifica: "",
       dataInicio: "",
       dataFim: "",
+      periodoRapido: "",
       acao: "",
       usuario_id: undefined,
     });
@@ -101,138 +139,234 @@ export default function ActionLogs({ onLogout, user }: ActionLogsProps) {
     }
   };
 
-  const handleGeneratePDF = async () => {
-  if (filteredLogs.length === 0) {
-    alert("Não há dados para exportar");
-    return;
-  }
-
-  setGeneratingPDF(true);
-  try {
-    // Criar novo documento PDF
-    const doc = new jsPDF();
-    
-    // Adicionar título
-    doc.setFontSize(16);
-    doc.setTextColor(44, 95, 105); // #2C5F69
-    doc.text("Relatório de Logs de Ações - FATEC", 14, 15);
-    
-    // Adicionar informações dos filtros aplicados
-    doc.setFontSize(10);
-    doc.setTextColor(0, 0, 0);
-    
-    let yPosition = 25;
-    
-    // Informações de data/hora da geração
-    const now = new Date();
-    doc.text(`Relatório gerado em: ${now.toLocaleString('pt-BR')}`, 14, yPosition);
-    yPosition += 5;
-    
-    // Filtros aplicados
-    doc.text("Filtros aplicados:", 14, yPosition);
-    yPosition += 5;
-    
-    if (filtros.searchTerm) {
-      doc.text(`• Pesquisa: "${filtros.searchTerm}"`, 20, yPosition);
-      yPosition += 4;
-    }
-    
-    if (filtros.dataInicio) {
-      doc.text(`• Data início: ${filtros.dataInicio}`, 20, yPosition);
-      yPosition += 4;
-    }
-    
-    if (filtros.dataFim) {
-      doc.text(`• Data fim: ${filtros.dataFim}`, 20, yPosition);
-      yPosition += 4;
-    }
-    
-    if (filtros.acao) {
-      doc.text(`• Ação: ${filtros.acao}`, 20, yPosition);
-      yPosition += 4;
+  // Filtragem local avançada
+  const filteredLogs = logs.filter((log) => {
+    // Filtro de busca por nome/ID
+    if (filtros.searchTerm && !(
+      (log.nome_usuario || '').toLowerCase().includes(filtros.searchTerm.toLowerCase()) ||
+      (log.acao || '').toLowerCase().includes(filtros.searchTerm.toLowerCase()) ||
+      (log.status || '').toLowerCase().includes(filtros.searchTerm.toLowerCase()) ||
+      (log.detalhes && log.detalhes.toLowerCase().includes(filtros.searchTerm.toLowerCase()))
+    )) {
+      return false;
     }
 
-    if (filtros.usuario_id) {
-      doc.text(`• ID do usuário: ${filtros.usuario_id}`, 20, yPosition);
-      yPosition += 4;
-    }
-    
-    // Total de registros
-    doc.text(`• Total de registros: ${filteredLogs.length}`, 20, yPosition);
-    yPosition += 8;
+    // Filtro por data específica (quando carregado via loadAllLogs)
+    if (filtros.filterType === "data-especifica" && filtros.dataEspecifica) {
+      const logDate = new Date(log.data_hora);
+      const logDateFormatted = logDate.toISOString().split('T')[0];
 
-    // Preparar dados da tabela - CORREÇÃO: lidar com valores nulos
-    const tableData = filteredLogs.map((log, index) => [
-      (index + 1).toString(),
-      log.nome_usuario || 'N/A',
-      formatDateTime(log.data_hora),
-      log.acao || 'N/A',
-      log.status || 'N/A',
-      log.detalhes || 'N/A'
-    ]);
-
-    // Adicionar tabela
-    autoTable(doc, {
-      head: [['#', 'Usuário', 'Data/Hora', 'Ação', 'Status', 'Detalhes']],
-      body: tableData,
-      startY: yPosition + 5,
-      styles: {
-        fontSize: 8,
-        cellPadding: 2,
-      },
-      headStyles: {
-        fillColor: [44, 95, 105], // #2C5F69
-        textColor: 255,
-        fontStyle: 'bold'
-      },
-      alternateRowStyles: {
-        fillColor: [240, 240, 240]
-      },
-      columnStyles: {
-        0: { cellWidth: 10 }, // #
-        1: { cellWidth: 30 }, // Usuário
-        2: { cellWidth: 35 }, // Data/Hora
-        3: { cellWidth: 35 }, // Ação
-        4: { cellWidth: 20 }, // Status
-        5: { cellWidth: 60 }, // Detalhes
-      },
-      margin: { top: 10 },
-      didDrawPage: function (data) {
-        // Adicionar número da página
-        const pageCount = doc.getNumberOfPages();
-        doc.setFontSize(8);
-        doc.text(
-          `Página ${data.pageNumber} de ${pageCount}`,
-          doc.internal.pageSize.getWidth() / 2,
-          doc.internal.pageSize.getHeight() - 10,
-          { align: 'center' }
-        );
+      if (logDateFormatted !== filtros.dataEspecifica) {
+        return false;
       }
-    });
+    }
 
-    // Salvar o PDF
-    const fileName = `logs_acoes_${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours()}${now.getMinutes()}.pdf`;
-    doc.save(fileName);
+    // Filtro por range de datas
+    if (filtros.filterType === "range-datas" && filtros.dataInicio && filtros.dataFim) {
+      const logDate = new Date(log.data_hora);
+      const logDateFormatted = logDate.toISOString().split('T')[0];
 
-  } catch (error) {
-    console.error("Erro ao gerar PDF:", error);
-    alert("Não foi possível gerar o PDF");
-  } finally {
-    setGeneratingPDF(false);
-  }
-};
-  // Filtro local para busca em tempo real - CORREÇÃO
-const filteredLogs = logs.filter((log) => {
-  if (!filtros.searchTerm) return true;
+      if (logDateFormatted < filtros.dataInicio || logDateFormatted > filtros.dataFim) {
+        return false;
+      }
+    }
 
-  const searchTerm = filtros.searchTerm.toLowerCase();
-  return (
-    (log.nome_usuario || '').toLowerCase().includes(searchTerm) ||
-    (log.acao || '').toLowerCase().includes(searchTerm) ||
-    (log.status || '').toLowerCase().includes(searchTerm) ||
-    (log.detalhes && log.detalhes.toLowerCase().includes(searchTerm))
-  );
-});
+    // Filtro por período rápido
+    if (filtros.filterType === "periodo-rapido" && filtros.periodoRapido) {
+      const logDate = new Date(log.data_hora);
+      const today = new Date();
+
+      switch (filtros.periodoRapido) {
+        case "semana":
+          const weekAgo = new Date(today);
+          weekAgo.setDate(today.getDate() - 6);
+          if (logDate < weekAgo) return false;
+          break;
+
+        case "quinzena":
+          const fortnightAgo = new Date(today);
+          fortnightAgo.setDate(today.getDate() - 14);
+          if (logDate < fortnightAgo) return false;
+          break;
+
+        case "mes":
+          const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+          if (logDate < firstDayOfMonth) return false;
+          break;
+      }
+    }
+
+    // Filtro por ação (mantido do sistema existente)
+    if (filtros.acao && log.acao !== filtros.acao) {
+      return false;
+    }
+
+    return true;
+  });
+
+  const handleGeneratePDF = async () => {
+
+
+    if (filteredLogs.length === 0) {
+      alert("Não há dados para exportar");
+      return;
+    }
+
+    setGeneratingPDF(true);
+    try {
+      const getImageDataUrl = async (url: string) => {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Erro ao carregar imagem');
+        const blob = await res.blob();
+        return await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      };
+
+      let logoDataUrl: string | null = null;
+      try {
+        logoDataUrl = await getImageDataUrl('/assets/images/logo_fatec.png');
+      } catch (err) {
+        console.warn('Não foi possível carregar logo para o PDF:', err);
+        logoDataUrl = null;
+      }
+
+      const doc = new jsPDF();
+
+      const headerHeight = 30;
+      const startY = headerHeight + 5;
+
+      if (logoDataUrl) {
+        doc.addImage(logoDataUrl, 'PNG', 14, 8, 28, 14);
+      }
+
+      // Adicionar título
+      doc.setFontSize(16);
+      doc.setTextColor(44, 95, 105);
+      doc.text("Relatório de Logs de Ações - FATEC", 50, 16);
+
+      // Informações de geração
+      doc.setFontSize(10);
+      doc.setTextColor(0, 0, 0);
+
+      let yPosition = startY;
+
+      const now = new Date();
+      doc.text(`Relatório gerado em: ${now.toLocaleString('pt-BR')}`, 14, yPosition);
+      yPosition += 5;
+
+      doc.text("Filtros aplicados:", 14, yPosition);
+      yPosition += 5;
+
+      if (filtros.searchTerm) {
+        doc.text(`• Pesquisa: "${filtros.searchTerm}"`, 20, yPosition);
+        yPosition += 4;
+      }
+
+      if (filtros.acao) {
+        doc.text(`• Ação: ${filtros.acao}`, 20, yPosition);
+        yPosition += 4;
+      }
+
+      // Novos filtros no PDF
+      if (filtros.filterType === "todos") {
+        doc.text(`• Filtro: Todos os logs`, 20, yPosition);
+        yPosition += 4;
+      }
+
+      if (filtros.filterType === "data-especifica" && filtros.dataEspecifica) {
+        doc.text(`• Data específica: ${new Date(filtros.dataEspecifica).toLocaleDateString('pt-BR')}`, 20, yPosition);
+        yPosition += 4;
+      }
+
+      if (filtros.filterType === "range-datas" && filtros.dataInicio && filtros.dataFim) {
+        doc.text(`• Range: ${new Date(filtros.dataInicio).toLocaleDateString('pt-BR')} à ${new Date(filtros.dataFim).toLocaleDateString('pt-BR')}`, 20, yPosition);
+        yPosition += 4;
+      }
+
+      if (filtros.filterType === "periodo-rapido" && filtros.periodoRapido) {
+        const periodoText = {
+          semana: "Esta Semana",
+          quinzena: "Esta Quinzena",
+          mes: "Este Mês"
+        }[filtros.periodoRapido];
+        doc.text(`• Período rápido: ${periodoText}`, 20, yPosition);
+        yPosition += 4;
+      }
+
+      if (filtros.usuario_id) {
+        doc.text(`• ID do usuário: ${filtros.usuario_id}`, 20, yPosition);
+        yPosition += 4;
+      }
+
+      doc.text(`• Total de registros: ${filteredLogs.length}`, 20, yPosition);
+      yPosition += 8;
+
+      // Preparar dados da tabela
+      const tableData = filteredLogs.map((log, index) => [
+        (index + 1).toString(),
+        log.nome_usuario || 'N/A',
+        formatDateTime(log.data_hora),
+        log.acao || 'N/A',
+        log.status || 'N/A',
+        log.detalhes || 'N/A'
+      ]);
+
+      // Adicionar tabela
+      autoTable(doc, {
+        head: [['#', 'Usuário', 'Data/Hora', 'Ação', 'Status', 'Detalhes']],
+        body: tableData,
+        startY: yPosition + 5,
+        styles: {
+          fontSize: 8,
+          cellPadding: 2,
+        },
+        headStyles: {
+          fillColor: [44, 95, 105],
+          textColor: 255,
+          fontStyle: 'bold'
+        },
+        alternateRowStyles: {
+          fillColor: [240, 240, 240]
+        },
+        columnStyles: {
+          0: { cellWidth: 10 },
+          1: { cellWidth: 30 },
+          2: { cellWidth: 35 },
+          3: { cellWidth: 35 },
+          4: { cellWidth: 20 },
+          5: { cellWidth: 60 },
+        },
+        margin: { top: 10 },
+        didDrawPage: function (data) {
+          // Adicionar número da página
+          const pageCount = doc.getNumberOfPages();
+          doc.setFontSize(8);
+          doc.text(
+            `Página ${data.pageNumber} de ${pageCount}`,
+            doc.internal.pageSize.getWidth() / 2,
+            doc.internal.pageSize.getHeight() - 10,
+            { align: 'center' }
+          );
+        }
+      });
+
+      const pdfBlob = doc.output('blob');
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      window.open(pdfUrl, '_blank');
+      // revogar URL após um minuto para liberar memória
+      setTimeout(() => URL.revokeObjectURL(pdfUrl), 60_000);
+
+    } catch (error) {
+      console.error("Erro ao gerar PDF:", error);
+      alert("Não foi possível gerar o PDF");
+    } finally {
+      setGeneratingPDF(false);
+    }
+  };
 
   const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
@@ -263,16 +397,16 @@ const filteredLogs = logs.filter((log) => {
 
       <MenuNavigation currentPath="/admin/action-logs" />
 
-      {/* Content Area - CORRIGIDO: Adicionado flex-col e flex-1 */}
+      {/* Content Area */}
       <div className="flex-1 flex flex-col p-6 max-w-7xl mx-auto w-full">
         {/* Search and Filters */}
         <div className="mb-4">
           <div className="flex items-center bg-white rounded-lg shadow-sm px-4 py-2">
             <button
-              className="p-2 text-[#4A90A4] font-medium mr-2"
+              className="p-2 text-[#4A90A4] font-medium mr-2 cursor-pointer hover:bg-gray-100 rounded"
               onClick={() => setShowFilters(!showFilters)}
             >
-              ☰ Filtros
+              ☰ Filtros Avançados
             </button>
 
             <input
@@ -292,53 +426,124 @@ const filteredLogs = logs.filter((log) => {
             </button>
           </div>
 
+          {/* Filtros Expandíveis */}
           {showFilters && (
             <div className="bg-white rounded-lg shadow-sm p-4 mt-3">
-              <h3 className="text-gray-800 text-base font-semibold mb-3">Filtros Avançados:</h3>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Data Início:
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                {/* Tipo de Filtro Principal */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-semibold text-gray-700 mb-3">
+                    Tipo de Filtro
                   </label>
-                  <input
-                    type="text"
-                    className="w-full bg-gray-100 rounded p-2 text-sm text-gray-700 h-10"
-                    placeholder="YYYY-MM-DD"
-                    value={filtros.dataInicio || ""}
-                    onChange={(e) =>
-                      setFiltros((prev) => ({ ...prev, dataInicio: e.target.value }))
-                    }
-                  />
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {[
+                      { value: "todos", label: "Todos" }, // Mudei "hoje" para "todos"
+                      { value: "data-especifica", label: "Data Específica" },
+                      { value: "range-datas", label: "Range de Datas" },
+                      { value: "periodo-rapido", label: "Período Rápido" }
+                    ].map((type) => (
+                      <button
+                        key={type.value}
+                        className={`px-3 py-2 rounded text-sm font-medium border ${filtros.filterType === type.value
+                          ? "bg-[#4A90A4] text-white border-[#3A7A8C]"
+                          : "bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200"
+                          }`}
+                        onClick={() => setFiltros(prev => ({
+                          ...prev,
+                          filterType: type.value as any
+                        }))}
+                      >
+                        {type.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Data Fim:
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full bg-gray-100 rounded p-2 text-sm text-gray-700 h-10"
-                    placeholder="YYYY-MM-DD"
-                    value={filtros.dataFim || ""}
-                    onChange={(e) =>
-                      setFiltros((prev) => ({ ...prev, dataFim: e.target.value }))
-                    }
-                  />
-                </div>
-              </div>
+                {/* Data Específica */}
+                {filtros.filterType === "data-especifica" && (
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Data Específica
+                    </label>
+                    <input
+                      type="date"
+                      value={filtros.dataEspecifica}
+                      onChange={(e) => setFiltros(prev => ({ ...prev, dataEspecifica: e.target.value }))}
+                      className="w-full p-2 border border-gray-300 rounded-md"
+                    />
+                  </div>
+                )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
+                {/* Range de Datas */}
+                {filtros.filterType === "range-datas" && (
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Range de Datas
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">De:</label>
+                        <input
+                          type="date"
+                          value={filtros.dataInicio}
+                          onChange={(e) => setFiltros(prev => ({ ...prev, dataInicio: e.target.value }))}
+                          className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">Até:</label>
+                        <input
+                          type="date"
+                          value={filtros.dataFim}
+                          onChange={(e) => setFiltros(prev => ({ ...prev, dataFim: e.target.value }))}
+                          className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Período Rápido */}
+                {filtros.filterType === "periodo-rapido" && (
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Período Rápido
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                      {[
+                        { value: "semana", label: "Esta Semana" },
+                        { value: "quinzena", label: "Esta Quinzena" },
+                        { value: "mes", label: "Este Mês" }
+                      ].map((periodo) => (
+                        <button
+                          key={periodo.value}
+                          className={`px-3 py-2 rounded text-sm font-medium border ${filtros.periodoRapido === periodo.value
+                            ? "bg-[#4A90A4] text-white border-[#3A7A8C]"
+                            : "bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200"
+                            }`}
+                          onClick={() => setFiltros(prev => ({
+                            ...prev,
+                            periodoRapido: periodo.value as any
+                          }))}
+                        >
+                          {periodo.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Filtro por Ação (mantido do sistema existente) */}
+                <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Ação:
+                    Ação
                   </label>
                   <select
                     value={filtros.acao || ""}
                     onChange={(e) =>
                       setFiltros((prev) => ({ ...prev, acao: e.target.value }))
                     }
-                    className="w-full bg-gray-100 rounded p-2 text-sm text-gray-700 h-10 border-none"
+                    className="w-full p-2 border border-gray-300 rounded-md text-gray-700"
                   >
                     {acoesOptions.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -347,29 +552,17 @@ const filteredLogs = logs.filter((log) => {
                     ))}
                   </select>
                 </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Limite:
-                  </label>
-                  <input
-                    type="number"
-                    className="w-full bg-gray-100 rounded p-2 text-sm text-gray-700 h-10"
-                    value={limit}
-                    onChange={(e) => setLimit(parseInt(e.target.value) || 100)}
-                  />
-                </div>
               </div>
 
-              <div className="flex justify-end space-x-3">
+              <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
                 <button
-                  className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm font-semibold"
+                  className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm font-semibold transition-colors"
                   onClick={resetFilters}
                 >
-                  Limpar Filtros
+                  Limpar Tudo
                 </button>
                 <button
-                  className="bg-[#4A90A4] hover:bg-[#3A7A8C] text-white px-4 py-2 rounded text-sm font-semibold"
+                  className="bg-[#4A90A4] hover:bg-[#3A7A8C] text-white px-4 py-2 rounded text-sm font-semibold transition-colors"
                   onClick={applyFilters}
                 >
                   Aplicar Filtros
@@ -386,11 +579,10 @@ const filteredLogs = logs.filter((log) => {
           </span>
 
           <button
-            className={`flex items-center px-4 py-2 rounded text-sm font-medium ${
-              generatingPDF || filteredLogs.length === 0
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-green-800 hover:bg-green-700"
-            } text-white transition-colors`}
+            className={`flex items-center px-4 py-2 rounded text-sm font-medium ${generatingPDF || filteredLogs.length === 0
+              ? "bg-gray-400 cursor-not-allowed"
+              : "bg-green-800 hover:bg-green-700"
+              } text-white transition-colors`}
             onClick={handleGeneratePDF}
             disabled={generatingPDF || filteredLogs.length === 0}
           >
@@ -407,16 +599,16 @@ const filteredLogs = logs.filter((log) => {
           </button>
         </div>
 
-        {/* Logs List - CORRIGIDO: Estrutura de scroll */}
+        {/* Logs List */}
         {loading && offset === 0 ? (
           <div className="flex flex-col items-center justify-center min-h-[200px]">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#4A90A4]"></div>
             <span className="mt-4 text-gray-600">Carregando logs...</span>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col min-h-0"> {/* CORRIGIDO: Container flexível */}
-            <div className="bg-gray-50 rounded-xl p-3 shadow-sm flex-1 flex flex-col min-h-0"> {/* CORRIGIDO: Flex container */}
-              <div className="flex-1 overflow-y-auto"> {/* CORRIGIDO: Scroll area */}
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="bg-gray-50 rounded-xl p-3 shadow-sm flex-1 flex flex-col min-h-0">
+              <div className="flex-1 overflow-y-auto">
                 {filteredLogs.length > 0 ? (
                   <div className="space-y-3">
                     {filteredLogs.map((item) => (
@@ -463,7 +655,6 @@ const filteredLogs = logs.filter((log) => {
                       </div>
                     ))}
 
-                    {/* Load More */}
                     {loading && offset > 0 && (
                       <div className="flex justify-center items-center p-4">
                         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#4A90A4] mr-2"></div>
@@ -471,7 +662,6 @@ const filteredLogs = logs.filter((log) => {
                       </div>
                     )}
 
-                    {/* Load More Button */}
                     {!loading && logs.length >= limit && (
                       <div className="flex justify-center mt-4">
                         <button
