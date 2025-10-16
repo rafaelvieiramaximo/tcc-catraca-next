@@ -20,21 +20,56 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
   const [editUser, setEditUser] = useState<UsuarioCompleto | null>(null);
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
 
+  // Estados para scroll infinito
+  const [limit] = useState<number>(50);
+  const [offset, setOffset] = useState<number>(0);
+  const [hasMore, setHasMore] = useState<boolean>(true);
+
   useEffect(() => {
-    loadUsers();
+    loadUsers(0, false);
   }, []);
 
-  const loadUsers = async () => {
+  const loadUsers = async (newOffset: number = 0, append: boolean = false) => {
     try {
       setLoading(true);
       const allUsers = await databaseService.getAllUsers();
-      setUsers(allUsers);
-      setFilteredUsers(allUsers);
+
+      // Simular paginação
+      const startIndex = newOffset;
+      const endIndex = startIndex + limit;
+      const paginatedUsers = allUsers.slice(startIndex, endIndex);
+
+      if (append) {
+        setUsers(prev => [...prev, ...paginatedUsers]);
+        setFilteredUsers(prev => [...prev, ...paginatedUsers]);
+      } else {
+        setUsers(paginatedUsers);
+        setFilteredUsers(paginatedUsers);
+      }
+
+      setOffset(newOffset);
+      setHasMore(endIndex < allUsers.length);
+
     } catch (error) {
       console.error("Erro ao carregar usuários:", error);
       alert("Não foi possível carregar a lista de usuários.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadMore = () => {
+    if (!loading && hasMore) {
+      loadUsers(offset + limit, true);
+    }
+  };
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+
+    // Chegou perto do final (50px do fim)
+    if (scrollHeight - scrollTop <= clientHeight + 50) {
+      loadMore();
     }
   };
 
@@ -88,14 +123,14 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
   };
 
   const handleUserAdded = async () => {
-    await loadUsers();
+    await loadUsers(0, false); // Recarrega do início
   };
 
   const confirmDeleteUser = async (userId: number) => {
     try {
       await logUserDeletion(users.find(u => u.id === userId)!, true);
       await databaseService.deleteUser(userId);
-      await loadUsers();
+      await loadUsers(0, false); // Recarrega do início
       setShowDeleteSuccess(true);
       setTimeout(() => setShowDeleteSuccess(false), 3000);
     } catch (error) {
@@ -114,7 +149,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
     }
   };
 
-  if (loading) {
+  if (loading && offset === 0) {
     return (
       <div className="min-h-screen bg-gray-50">
         <Header onLogout={handleLogout} pageName="Gerenciador de Usuários" user={user} />
@@ -131,14 +166,13 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
 
   return (
     <div className="min-h-screen bg-gray-50 relative">
-      {/* Aplica blur apenas no conteúdo quando modal estiver aberto */}
       <div className={showAddModal ? 'blur-xs' : ''}>
         <Header onLogout={handleLogout} pageName="Gerenciador de Usuários" user={user} />
         {user?.tipo === 'ADMIN' && (
-        <MenuNavigation currentPath="/usermanage" />
+          <MenuNavigation currentPath="/usermanage" />
         )}
 
-        <div className="flex-1 p-4">
+        <div className="flex-1 p-4 overflow-y-auto mx-4 my-2">
           {/* Search Bar */}
           <div className="flex items-center bg-white rounded-lg px-3 mb-4 shadow-sm border">
             <input
@@ -156,7 +190,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
             </button>
           </div>
 
-          {/* Users List */}
+          {/* Users List - MODIFICADO COM SCROLL */}
           <div className="bg-white rounded-lg p-4 mb-4 shadow-sm border">
             {filteredUsers.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-10">
@@ -167,10 +201,21 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
                 </div>
               </div>
             ) : (
-              <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+              <div
+                className="space-y-3 max-h-[60vh] "
+                onScroll={handleScroll}
+              >
                 {filteredUsers.map((user) => (
                   <div key={user.id} className="bg-gray-50 rounded-lg p-4 mb-3 flex items-center justify-between border border-gray-200 shadow-sm">
-                    <img src={user.imagem_url ?? undefined} alt={user.nome} className="w-12 h-12 rounded-full mr-4" />
+                    <img
+                      src={user.imagem_url ?? undefined}
+                      alt={user.nome}
+                      className="w-12 h-12 rounded-full mr-4 object-cover"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                      }}
+                    />
                     <div className="flex flex-1">
                       <div className="flex-1 pr-2">
                         <div className="text-xs font-semibold text-gray-600 mb-1">Identificador</div>
@@ -205,6 +250,26 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
                     </div>
                   </div>
                 ))}
+
+                {/* Loading indicator para mais dados */}
+                {loading && offset > 0 && (
+                  <div className="flex justify-center items-center p-4">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#4A90A4] mr-2"></div>
+                    <span className="text-gray-600 text-sm">Carregando mais usuários...</span>
+                  </div>
+                )}
+
+                {/* Botão Carregar Mais */}
+                {!loading && hasMore && (
+                  <div className="flex justify-center mt-4">
+                    <button
+                      onClick={loadMore}
+                      className="bg-[#4A90A4] hover:bg-[#3A7A8C] text-white px-4 py-2 rounded text-sm font-medium"
+                    >
+                      Carregar Mais
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -226,7 +291,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
         )}
       </div>
 
-      {/* Add User Modal - fora da div com blur */}
+      {/* Add User Modal */}
       <AddUserModal
         visible={showAddModal}
         onClose={() => {
