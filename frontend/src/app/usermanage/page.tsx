@@ -1,22 +1,21 @@
-// app/admin/action-logs/page.tsx
 'use client';
 
-import { useAppAuth } from '../../contexts/app-auth-context';
-import ActionLogs from '../../components/ActionLogs/page';
-import LoadingScreen from '../../components/loadingScreen';
+import { useAppAuth } from '../contexts/app-auth-context';
+import LoadingScreen from '../components/loadingScreen';
+import UserManagement from '../components/UserManagement/page';
 
-export default function ActionLogsPage() {
+export default function EntryLogsPage() {
   const { currentUser, handleLogout, loading } = useAppAuth();
 
   if (loading) {
     return <LoadingScreen />;
   }
 
-  if (currentUser?.tipo !='ADMIN') {
+  if (currentUser?.tipo !== 'ADMIN' && currentUser?.tipo !== 'RH') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
         <div className="text-red-500 text-lg mb-4">Erro: Usuário não autenticado</div>
-        <button 
+        <button
           onClick={() => window.location.href = '/'}
           className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
         >
@@ -24,9 +23,9 @@ export default function ActionLogsPage() {
         </button>
       </div>
     );
-  }else{
-    return <ActionLogs user={currentUser} onLogout={handleLogout} />;
+  } else {
+    return <UserManagement user={currentUser} onLogout={handleLogout} />;
   }
 
-  
+
 }

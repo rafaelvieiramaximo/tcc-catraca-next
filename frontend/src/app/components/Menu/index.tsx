@@ -146,7 +146,7 @@ export default function Menu({ user, onLogout }: MenuProps) {
           {user.tipo === "ADMIN" && (
             <div 
               className="bg-white rounded-xl p-5 w-full md:w-[calc(33.333%-20px)] min-h-[280px] flex flex-col shadow-lg cursor-pointer hover:shadow-xl transition-shadow"
-              onClick={() => router.push('/admin/user-management')}
+              onClick={() => router.push('/usermanage')}
             >
               {/* Card Header */}
               <div className="flex justify-center mb-5 py-3 bg-[#E8F4F8] rounded-lg border-l-4 border-l-[#4A90A4]">
@@ -171,7 +171,7 @@ export default function Menu({ user, onLogout }: MenuProps) {
                   className="w-full bg-[#5CB3CC] rounded-lg py-3 text-center mb-4 shadow-lg hover:bg-[#4A90A4] transition-colors"
                   onClick={(e) => {
                     e.stopPropagation();
-                    router.push('/admin/user-management');
+                    router.push('/usermanage');
                   }}
                 >
                   <span className="text-white text-base font-bold tracking-wide">

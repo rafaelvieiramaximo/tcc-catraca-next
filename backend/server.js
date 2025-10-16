@@ -221,7 +221,15 @@ app.post('/api/auth/login', async (req, res) => {
         WHERE f.matricula = $1 AND f.senha = crypt($2, f.senha)
       `;
       params = [identificador, senha];
-    } else {
+    } else if(tipo === 'RH'){
+      query = `
+        SELECT u.*, rh.matricula, 'RH'::text AS tipo
+        FROM usuario u
+        JOIN rh ON u.id = rh.usuario_id
+        WHERE rh.matricula = $1 AND rh.senha = crypt($2, rh.senha)
+      `;
+      params = [identificador, senha];
+    }else{
       return res.status(400).json({ error: 'Tipo de usuário inválido' });
     }
 
@@ -263,7 +271,7 @@ app.get('/api/users', async (req, res) => {
           ELSE false 
         END as tem_imagem
       FROM usuario 
-      WHERE tipo != 'ADMIN' AND tipo != 'PORTARIA'
+      WHERE tipo != 'ADMIN' AND tipo != 'PORTARIA' AND tipo != 'RH'
       ORDER BY id
     `;
     const result = await pool.query(query);

@@ -20,6 +20,12 @@ export function middleware(request: NextRequest) {
       const user = JSON.parse(currentUser);
       const isAdmin = user.tipo === 'ADMIN';
       const isPortaria = user.tipo === 'PORTARIA';
+      const isRH = user.tipo === 'RH';
+
+      // RH tentando acessar rotas do ADMIN ou PORTARIA
+      if (isRH && (request.nextUrl.pathname.startsWith('/admin') || request.nextUrl.pathname.startsWith('/portaria'))) {
+        return NextResponse.redirect(new URL('/usermanage', request.url));
+      }
 
       // ADMIN tentando acessar rotas da PORTARIA
       if (isAdmin && request.nextUrl.pathname.startsWith('/portaria')) {
@@ -48,5 +54,6 @@ export const config = {
     '/admin/:path*',
     '/portaria/:path*',
     '/entry-logs/:path*',
+    '/usermanage/:path*',
   ],
 };

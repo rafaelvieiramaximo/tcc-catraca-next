@@ -7,7 +7,7 @@ import { AuthProvider } from './contexts/auth-context';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'FATEC Portaria - Sistema',
+  title: 'FATEC Catraca - Sistema',
   description: 'Sistema de controle de acesso FATEC Itu',
 };
 

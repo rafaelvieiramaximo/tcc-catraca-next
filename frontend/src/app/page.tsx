@@ -23,6 +23,8 @@ export default function Home() {
         router.push('/portaria');
       } else if (currentUser.tipo === 'ADMIN') {
         router.push('/admin');
+      }else if (currentUser.tipo === 'RH') {
+        router.push('/usermanage');
       }
     }
   }, [isAuthenticated, currentUser, loading, router]);
