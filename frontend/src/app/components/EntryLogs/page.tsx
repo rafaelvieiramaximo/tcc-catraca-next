@@ -346,7 +346,6 @@ export default function EntryLogs({ user, onLogout }: EntryLogsProps) {
         controle(log)
       ]);
 
-      // Adicionar tabela com autoTable — incluir cabeçalho/rodapé por página
       autoTable(doc, {
         head: [['#', 'Identificador', 'Nome', 'Tipo', 'Data', 'Horário', 'Período', 'Controle']],
         body: tableData,

@@ -426,26 +426,24 @@ export default function ActionLogs({ onLogout, user }: ActionLogsProps) {
             </button>
           </div>
 
-          {/* Filtros Expandíveis */}
           {showFilters && (
             <div className="bg-white rounded-lg shadow-sm p-4 mt-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
-                {/* Tipo de Filtro Principal */}
                 <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-gray-700 mb-3">
                     Tipo de Filtro
                   </label>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     {[
-                      { value: "todos", label: "Todos" }, // Mudei "hoje" para "todos"
+                      { value: "todos", label: "Todos" },
                       { value: "data-especifica", label: "Data Específica" },
-                      { value: "range-datas", label: "Range de Datas" },
+                      { value: "range-datas", label: "Período de Datas" },
                       { value: "periodo-rapido", label: "Período Rápido" }
                     ].map((type) => (
                       <button
                         key={type.value}
                         className={`px-3 py-2 rounded text-sm font-medium border ${filtros.filterType === type.value
-                          ? "bg-[#4A90A4] text-white border-[#3A7A8C]"
+                          ? "bg-[#4A90A4] text-gray-100 border-[#3A7A8C]"
                           : "bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200"
                           }`}
                         onClick={() => setFiltros(prev => ({
@@ -469,16 +467,15 @@ export default function ActionLogs({ onLogout, user }: ActionLogsProps) {
                       type="date"
                       value={filtros.dataEspecifica}
                       onChange={(e) => setFiltros(prev => ({ ...prev, dataEspecifica: e.target.value }))}
-                      className="w-full p-2 border border-gray-300 rounded-md"
+                      className="w-full p-2 border border-gray-300 rounded-md text-sm text-gray-700"
                     />
                   </div>
                 )}
 
-                {/* Range de Datas */}
                 {filtros.filterType === "range-datas" && (
                   <div className="md:col-span-2">
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Range de Datas
+                      Período de Datas
                     </label>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
@@ -487,7 +484,7 @@ export default function ActionLogs({ onLogout, user }: ActionLogsProps) {
                           type="date"
                           value={filtros.dataInicio}
                           onChange={(e) => setFiltros(prev => ({ ...prev, dataInicio: e.target.value }))}
-                          className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                          className="w-full p-2 border border-gray-300 rounded-md text-sm text-gray-700"
                         />
                       </div>
                       <div>
@@ -496,7 +493,7 @@ export default function ActionLogs({ onLogout, user }: ActionLogsProps) {
                           type="date"
                           value={filtros.dataFim}
                           onChange={(e) => setFiltros(prev => ({ ...prev, dataFim: e.target.value }))}
-                          className="w-full p-2 border border-gray-300 rounded-md text-sm"
+                          className="w-full p-2 border border-gray-300 rounded-md text-sm text-gray-700"
                         />
                       </div>
                     </div>
