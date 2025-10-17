@@ -32,6 +32,9 @@ export default function AddUserModal({
     const [catracaStatus, setCatracaStatus] = useState<'online' | 'offline' | 'checking'>('checking');
     const [biometriaMensagem, setBiometriaMensagem] = useState<string>('');
     const [cadastrandoBiometria, setCadastrandoBiometria] = useState(false);
+    
+    // NOVO ESTADO: Controla se o usuário já foi criado (apenas para novo usuário)
+    const [usuarioCriado, setUsuarioCriado] = useState<{id: number, nome: string, identificador: string} | null>(null);
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -57,8 +60,10 @@ export default function AddUserModal({
             if (!result.online) {
                 setBiometriaMensagem('❌ Catraca offline - biometria indisponível');
             } else {
-                setBiometriaMensagem('✅ Catraca online - pronta para cadastro');
-                setTimeout(() => setBiometriaMensagem(''), 3000);
+                if (!usuarioCriado && !userToEdit) {
+                    setBiometriaMensagem('✅ Catraca online - pronta para cadastro');
+                    setTimeout(() => setBiometriaMensagem(''), 3000);
+                }
             }
         } catch (error) {
             console.error('❌ Erro ao verificar status:', error);
@@ -76,6 +81,8 @@ export default function AddUserModal({
         } else {
             setBiometriaMensagem('');
             setCadastrandoBiometria(false);
+            // Resetar estado quando modal fechar
+            setUsuarioCriado(null);
         }
 
         return () => {
@@ -106,6 +113,8 @@ export default function AddUserModal({
             if (userToEdit.tem_imagem || userToEdit.imagem_path) {
                 loadUserImage(userToEdit);
             }
+            // Resetar estado de usuário criado quando for edição
+            setUsuarioCriado(null);
         } else {
             console.log('🆕 Modo criação - resetando formulário');
             setFormData({
@@ -118,6 +127,8 @@ export default function AddUserModal({
                 URL.revokeObjectURL(previewUrl);
             }
             setPreviewUrl(null);
+            // Resetar estado de usuário criado
+            setUsuarioCriado(null);
         }
     }, [userToEdit, visible]);
 
@@ -204,6 +215,11 @@ export default function AddUserModal({
     };
 
     const handleSelectImage = () => {
+        // Bloquear se usuário já foi criado e está aguardando biometria
+        if (usuarioCriado && !userToEdit) {
+            return;
+        }
+
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = 'image/*';
@@ -233,6 +249,11 @@ export default function AddUserModal({
     };
 
     const handleRemoveImage = () => {
+        // Bloquear se usuário já foi criado e está aguardando biometria
+        if (usuarioCriado && !userToEdit) {
+            return;
+        }
+
         if (confirm("Deseja realmente remover a imagem?")) {
             setImagemFile(null);
             if (previewUrl) {
@@ -241,8 +262,6 @@ export default function AddUserModal({
             setPreviewUrl(null);
         }
     };
-
-    // No modal, atualize a função cadastrarBiometria:
 
     const cadastrarBiometria = async (userId: number, identificador: string, nome: string) => {
         try {
@@ -281,6 +300,14 @@ export default function AddUserModal({
                     detalhes: `Biometria cadastrada na posição ${result.posicao}`,
                     nome_usuario: nome
                 });
+
+                // FECHAR MODAL APÓS SUCESSO (apenas para novo usuário)
+                if (!userToEdit) {
+                    setTimeout(() => {
+                        onUserAdded();
+                        onClose();
+                    }, 2000);
+                }
 
                 return true;
             } else {
@@ -360,38 +387,44 @@ export default function AddUserModal({
                     alert(result.error || "Não foi possível editar o usuário.");
                 }
             } else {
-                // NOVO FLUXO: Criar usuário COM biometria
-                const formDataToSend = new FormData();
-                formDataToSend.append('nome', formData.nome.trim());
-                formDataToSend.append('tipo', formData.tipo);
-                formDataToSend.append('identificador', formData.identificador.trim());
-
-                if (imagemFile) {
-                    formDataToSend.append('image', imagemFile);
-                }
-
-                setBiometriaMensagem('🔄 Criando usuário e cadastrando biometria...');
-
-                console.log('📤 Enviando dados para criar usuário com biometria...');
-
-                const response = await fetch('/api/users/com-biometria', {
-                    method: 'POST',
-                    body: formDataToSend
+                // NOVO FLUXO: Criar usuário SEM biometria (apenas salvar no banco)
+                const result = await databaseService.createUser({
+                    nome: formData.nome.trim(),
+                    tipo: formData.tipo,
+                    identificador: formData.identificador.trim(),
                 });
 
-                const result = await response.json();
-                console.log('📨 Resposta da criação do usuário:', result);
+                if (result.success && result.userId) {
+                    // Se há imagem, fazer upload
+                    if (imagemFile) {
+                        await databaseService.processAndUploadUserImage(
+                            result.userId,
+                            formData.identificador.trim(),
+                            imagemFile
+                        );
+                    }
 
-                if (result.success) {
-                    setBiometriaMensagem(`✅ Usuário criado com biometria cadastrada! Posição: ${result.posicao}`);
+                    // Armazenar dados do usuário criado para cadastro de biometria
+                    setUsuarioCriado({
+                        id: result.userId,
+                        nome: formData.nome.trim(),
+                        identificador: formData.identificador.trim()
+                    });
 
-                    setTimeout(() => {
-                        onUserAdded();
-                        onClose();
-                    }, 3000);
+                    setBiometriaMensagem('✅ Usuário criado com sucesso! Agora cadastre a biometria.');
+                    
+                    // Registrar log de criação
+                    await databaseService.createActionLog({
+                        id_usuario: result.userId,
+                        identificador: formData.identificador.trim(),
+                        acao: 'CRIAR_USUARIO',
+                        status: 'SUCESSO',
+                        detalhes: `${formData.tipo} ${formData.nome} cadastrado sem biometria`,
+                        nome_usuario: formData.nome
+                    });
+
                 } else {
                     alert(result.error || "Não foi possível criar o usuário.");
-                    setBiometriaMensagem('');
                 }
             }
         } catch (error: any) {
@@ -415,6 +448,7 @@ export default function AddUserModal({
         }
 
         if (userToEdit) {
+            // Cadastrar biometria para usuário existente
             const sucesso = await cadastrarBiometria(
                 userToEdit.id,
                 formData.identificador,
@@ -426,9 +460,19 @@ export default function AddUserModal({
                     setBiometriaMensagem('');
                 }, 5000);
             }
+        } else if (usuarioCriado) {
+            // Cadastrar biometria para usuário recém-criado
+            const sucesso = await cadastrarBiometria(
+                usuarioCriado.id,
+                usuarioCriado.identificador,
+                usuarioCriado.nome
+            );
+
+            if (sucesso) {
+                // O modal será fechado automaticamente na função cadastrarBiometria
+            }
         } else {
-            setBiometriaMensagem('ℹ️ A biometria será cadastrada automaticamente ao criar o usuário');
-            setTimeout(() => setBiometriaMensagem(''), 3000);
+            setBiometriaMensagem('❌ Crie o usuário primeiro antes de cadastrar a biometria');
         }
     };
 
@@ -443,10 +487,21 @@ export default function AddUserModal({
         setPreviewUrl(null);
         setBiometriaMensagem('');
         setCadastrandoBiometria(false);
+        setUsuarioCriado(null); // Resetar estado ao fechar
+        onClose();
+    };
+
+    // Função para fechar sem cadastrar biometria (apenas para novo usuário criado)
+    const handleCloseWithoutBiometry = () => {
+        setUsuarioCriado(null);
+        onUserAdded();
         onClose();
     };
 
     if (!visible) return null;
+
+    // Determinar se os campos devem estar bloqueados
+    const camposBloqueados = !!usuarioCriado && !userToEdit;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-opacity-50">
@@ -454,7 +509,8 @@ export default function AddUserModal({
                 {/* Header */}
                 <div className="flex justify-between items-center p-5 border-b border-gray-200 bg-white">
                     <div className="text-lg font-bold text-gray-800">
-                        {userToEdit ? "Editar Usuário" : "Cadastro de Usuário"}
+                        {userToEdit ? "Editar Usuário" : 
+                         usuarioCriado ? "Cadastrar Biometria" : "Cadastro de Usuário"}
                     </div>
                     <button
                         className="w-7 h-7 flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
@@ -470,12 +526,13 @@ export default function AddUserModal({
                     <div className="mb-4 p-3 bg-gray-50 rounded-lg border">
                         <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
-                                <div className={`w-3 h-3 rounded-full ${catracaStatus === 'online' ? 'bg-green-500' :
-                                        catracaStatus === 'checking' ? 'bg-yellow-500' : 'bg-red-500'
-                                    }`} />
+                                <div className={`w-3 h-3 rounded-full ${
+                                    catracaStatus === 'online' ? 'bg-green-500' :
+                                    catracaStatus === 'checking' ? 'bg-yellow-500' : 'bg-red-500'
+                                }`} />
                                 <span className="text-sm font-medium">
                                     Catraca: {catracaStatus === 'online' ? 'Online' :
-                                        catracaStatus === 'checking' ? 'Verificando...' : 'Offline'}
+                                            catracaStatus === 'checking' ? 'Verificando...' : 'Offline'}
                                 </span>
                             </div>
                             <button
@@ -489,18 +546,18 @@ export default function AddUserModal({
 
                         {/* Mensagem de Biometria */}
                         {biometriaMensagem && (
-                            <div className={`text-sm p-2 rounded mt-2 ${biometriaMensagem.includes('❌') ? 'bg-red-100 text-red-700 border border-red-200' :
-                                    biometriaMensagem.includes('✅') ? 'bg-green-100 text-green-700 border border-green-200' :
-                                        biometriaMensagem.includes('🔄') ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-                                            'bg-gray-100 text-gray-700 border border-gray-200'
-                                }`}>
+                            <div className={`text-sm p-2 rounded mt-2 ${
+                                biometriaMensagem.includes('❌') ? 'bg-red-100 text-red-700 border border-red-200' :
+                                biometriaMensagem.includes('✅') ? 'bg-green-100 text-green-700 border border-green-200' :
+                                biometriaMensagem.includes('🔄') ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                                'bg-gray-100 text-gray-700 border border-gray-200'
+                            }`}>
                                 {biometriaMensagem}
                             </div>
                         )}
                     </div>
 
-                    {/* Resto do código do modal (seção de imagem, formulário) permanece igual */}
-                    {/* ... Seção de Imagem ... */}
+                    {/* Seção de Imagem */}
                     <div className="mb-5">
                         <div className="text-base font-semibold text-gray-800 mb-2">Foto do Perfil</div>
                         <div className="flex justify-center">
@@ -546,20 +603,35 @@ export default function AddUserModal({
                                     />
                                     <div className="flex justify-center gap-2">
                                         <button
-                                            className="px-4 py-2 bg-blue-500 text-white rounded-md text-sm font-medium hover:bg-blue-600"
+                                            className={`px-4 py-2 rounded-md text-sm font-medium ${
+                                                camposBloqueados 
+                                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                                                    : 'bg-blue-500 text-white hover:bg-blue-600'
+                                            }`}
                                             onClick={handleSelectImage}
+                                            disabled={camposBloqueados}
                                         >
                                             Galeria
                                         </button>
                                         <button
-                                            className="px-4 py-2 bg-green-500 text-white rounded-md text-sm font-medium hover:bg-green-600"
+                                            className={`px-4 py-2 rounded-md text-sm font-medium ${
+                                                camposBloqueados 
+                                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                                                    : 'bg-green-500 text-white hover:bg-green-600'
+                                            }`}
                                             onClick={startCamera}
+                                            disabled={camposBloqueados}
                                         >
                                             Câmera
                                         </button>
                                         <button
-                                            className="px-4 py-2 bg-red-500 text-white rounded-md text-sm font-medium hover:bg-red-600"
+                                            className={`px-4 py-2 rounded-md text-sm font-medium ${
+                                                camposBloqueados 
+                                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                                                    : 'bg-red-500 text-white hover:bg-red-600'
+                                            }`}
                                             onClick={handleRemoveImage}
+                                            disabled={camposBloqueados}
                                         >
                                             Remover
                                         </button>
@@ -567,22 +639,40 @@ export default function AddUserModal({
                                 </div>
                             ) : (
                                 <div className="text-center">
-                                    <div className="w-32 h-32 rounded-full bg-gray-50 border-2 border-dashed border-gray-300 flex flex-col items-center justify-center p-4 hover:border-blue-400 transition-colors mb-4 mx-auto">
-                                        <div className="text-gray-400 text-2xl mb-2">📷</div>
-                                        <div className="text-gray-500 text-xs text-center">
-                                            Selecione uma opção
+                                    <div className={`w-32 h-32 rounded-full border-2 border-dashed flex flex-col items-center justify-center p-4 mb-4 mx-auto transition-colors ${
+                                        camposBloqueados 
+                                            ? 'bg-gray-100 border-gray-300' 
+                                            : 'bg-gray-50 border-gray-300 hover:border-blue-400'
+                                    }`}>
+                                        <div className={`text-2xl mb-2 ${
+                                            camposBloqueados ? 'text-gray-400' : 'text-gray-400'
+                                        }`}>📷</div>
+                                        <div className={`text-xs text-center ${
+                                            camposBloqueados ? 'text-gray-500' : 'text-gray-500'
+                                        }`}>
+                                            {camposBloqueados ? 'Foto cadastrada' : 'Selecione uma opção'}
                                         </div>
                                     </div>
                                     <div className="flex justify-center gap-3">
                                         <button
-                                            className="px-4 py-2 bg-blue-500 text-white rounded-md text-sm font-medium hover:bg-blue-600 flex items-center gap-2"
+                                            className={`px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${
+                                                camposBloqueados 
+                                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                                                    : 'bg-blue-500 text-white hover:bg-blue-600'
+                                            }`}
                                             onClick={handleSelectImage}
+                                            disabled={camposBloqueados}
                                         >
                                             📁 Galeria
                                         </button>
                                         <button
-                                            className="px-4 py-2 bg-green-500 text-white rounded-md text-sm font-medium hover:bg-green-600 flex items-center gap-2"
+                                            className={`px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${
+                                                camposBloqueados 
+                                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                                                    : 'bg-green-500 text-white hover:bg-green-600'
+                                            }`}
                                             onClick={startCamera}
+                                            disabled={camposBloqueados}
                                         >
                                             📸 Câmera
                                         </button>
@@ -598,20 +688,32 @@ export default function AddUserModal({
                         <div className="flex flex-col">
                             <div className="flex justify-between gap-2">
                                 <button
-                                    className={`flex-1 py-3 rounded-lg border text-sm font-medium transition-colors ${formData.tipo === "ESTUDANTE"
-                                        ? "bg-[#4A90A4] border-[#4A90A4] text-white"
-                                        : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
-                                        }`}
-                                    onClick={() => setFormData(prev => ({ ...prev, tipo: "ESTUDANTE" }))}
+                                    className={`flex-1 py-3 rounded-lg border text-sm font-medium transition-colors ${
+                                        formData.tipo === "ESTUDANTE"
+                                            ? camposBloqueados
+                                                ? "bg-gray-400 border-gray-400 text-white cursor-not-allowed"
+                                                : "bg-[#4A90A4] border-[#4A90A4] text-white"
+                                            : camposBloqueados
+                                                ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
+                                                : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
+                                    }`}
+                                    onClick={() => !camposBloqueados && setFormData(prev => ({ ...prev, tipo: "ESTUDANTE" }))}
+                                    disabled={camposBloqueados}
                                 >
                                     Estudante
                                 </button>
                                 <button
-                                    className={`flex-1 py-3 rounded-lg border text-sm font-medium transition-colors ${formData.tipo === "FUNCIONARIO"
-                                        ? "bg-[#4A90A4] border-[#4A90A4] text-white"
-                                        : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
-                                        }`}
-                                    onClick={() => setFormData(prev => ({ ...prev, tipo: "FUNCIONARIO" }))}
+                                    className={`flex-1 py-3 rounded-lg border text-sm font-medium transition-colors ${
+                                        formData.tipo === "FUNCIONARIO"
+                                            ? camposBloqueados
+                                                ? "bg-gray-400 border-gray-400 text-white cursor-not-allowed"
+                                                : "bg-[#4A90A4] border-[#4A90A4] text-white"
+                                            : camposBloqueados
+                                                ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
+                                                : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
+                                    }`}
+                                    onClick={() => !camposBloqueados && setFormData(prev => ({ ...prev, tipo: "FUNCIONARIO" }))}
+                                    disabled={camposBloqueados}
                                 >
                                     Funcionário
                                 </button>
@@ -624,10 +726,15 @@ export default function AddUserModal({
                         <div className="text-sm font-semibold text-gray-800 mb-2">Nome</div>
                         <input
                             type="text"
-                            className="w-full bg-gray-50 rounded-lg border border-gray-200 p-3 text-base text-gray-800 outline-none focus:border-[#4A90A4] focus:ring-2 focus:ring-[#4A90A4] focus:ring-opacity-20"
+                            className={`w-full rounded-lg border p-3 text-base outline-none focus:ring-2 focus:ring-opacity-20 ${
+                                camposBloqueados
+                                    ? "bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed"
+                                    : "bg-gray-50 border-gray-200 text-gray-800 focus:border-[#4A90A4] focus:ring-[#4A90A4]"
+                            }`}
                             value={formData.nome}
-                            onChange={(e) => setFormData(prev => ({ ...prev, nome: e.target.value }))}
+                            onChange={(e) => !camposBloqueados && setFormData(prev => ({ ...prev, nome: e.target.value }))}
                             placeholder="Digite o nome completo"
+                            disabled={camposBloqueados}
                         />
                     </div>
 
@@ -638,33 +745,40 @@ export default function AddUserModal({
                         </div>
                         <input
                             type="text"
-                            className="w-full bg-gray-50 rounded-lg border border-gray-200 p-3 text-base text-gray-800 outline-none focus:border-[#4A90A4] focus:ring-2 focus:ring-[#4A90A4] focus:ring-opacity-20"
+                            className={`w-full rounded-lg border p-3 text-base outline-none focus:ring-2 focus:ring-opacity-20 ${
+                                camposBloqueados
+                                    ? "bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed"
+                                    : "bg-gray-50 border-gray-200 text-gray-800 focus:border-[#4A90A4] focus:ring-[#4A90A4]"
+                            }`}
                             value={formData.identificador}
                             onChange={(e) => {
+                                if (camposBloqueados) return;
                                 const value = e.target.value.replace(/\D/g, "");
                                 setFormData(prev => ({ ...prev, identificador: value }));
                             }}
                             placeholder={formData.tipo === "FUNCIONARIO" ? "Digite a matrícula" : "Digite o RA"}
                             maxLength={formData.tipo === "FUNCIONARIO" ? 5 : 13}
+                            disabled={camposBloqueados}
                         />
                         <p className="text-xs text-gray-500 mt-1">
-                            {formData.tipo === "FUNCIONARIO"
-                                ? "5 dígitos numéricos"
+                            {formData.tipo === "FUNCIONARIO" 
+                                ? "5 dígitos numéricos" 
                                 : "13 dígitos numéricos"
                             }
                         </p>
                     </div>
 
-                    {/* Botão para cadastrar biometria (apenas para edição) */}
-                    {userToEdit && (
+                    {/* Botão para cadastrar biometria (SEMPRE VISÍVEL quando aplicável) */}
+                    {(userToEdit || usuarioCriado) && (
                         <div className="mb-4">
                             <button
                                 onClick={iniciarCadastroBiometria}
                                 disabled={cadastrandoBiometria || loading || catracaStatus !== 'online' || !formData.identificador}
-                                className={`w-full py-3 rounded-lg border text-sm font-medium transition-colors flex items-center justify-center gap-2 ${(cadastrandoBiometria || loading || catracaStatus !== 'online' || !formData.identificador)
+                                className={`w-full py-3 rounded-lg border text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                                    (cadastrandoBiometria || loading || catracaStatus !== 'online' || !formData.identificador)
                                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                         : 'bg-green-500 text-white hover:bg-green-600'
-                                    }`}
+                                }`}
                             >
                                 {cadastrandoBiometria ? (
                                     <>
@@ -674,7 +788,7 @@ export default function AddUserModal({
                                 ) : (
                                     <>
                                         <span>📝</span>
-                                        Cadastrar/Atualizar Biometria
+                                        {userToEdit ? 'Cadastrar/Atualizar Biometria' : 'Cadastrar Biometria'}
                                     </>
                                 )}
                             </button>
@@ -683,39 +797,45 @@ export default function AddUserModal({
                                     ? "Preencha o identificador primeiro"
                                     : catracaStatus !== 'online'
                                         ? "Aguardando conexão com a catraca"
-                                        : "Clique para cadastrar a digital na catraca"}
+                                        : userToEdit
+                                            ? "Clique para cadastrar a digital na catraca"
+                                            : "Clique para cadastrar a digital do novo usuário"}
                             </p>
                         </div>
                     )}
 
-                    {/* Informação sobre biometria para novo usuário */}
-                    {!userToEdit && (
-                        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                            <div className="flex items-center gap-2">
-                                <span className="text-blue-500">ℹ️</span>
-                                <span className="text-sm text-blue-700">
-                                    A biometria será cadastrada automaticamente após criar o usuário
-                                </span>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Botão Principal */}
-                    <button
-                        className={`w-full rounded-full py-4 text-base font-bold text-white transition-colors flex items-center justify-center ${loading ? "bg-gray-400 cursor-not-allowed" : "bg-[#4A90A4] hover:bg-[#3a7a8a]"
-                            }`}
-                        onClick={handleSubmit}
-                        disabled={loading}
-                    >
-                        {loading ? (
-                            <>
-                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                                {userToEdit ? "Salvando..." : "Cadastrando..."}
-                            </>
-                        ) : (
-                            userToEdit ? "Salvar Alterações" : "Cadastrar Usuário"
+                    {/* Botão Principal - COMPORTAMENTO DIFERENTE CONFORME O ESTADO */}
+                    <div className="space-y-3">
+                        {/* Botão de cadastrar usuário (apenas quando não há usuário criado) */}
+                        {!usuarioCriado && (
+                            <button
+                                className={`w-full rounded-full py-4 text-base font-bold text-white transition-colors flex items-center justify-center ${
+                                    loading ? "bg-gray-400 cursor-not-allowed" : "bg-[#4A90A4] hover:bg-[#3a7a8a]"
+                                }`}
+                                onClick={handleSubmit}
+                                disabled={loading}
+                            >
+                                {loading ? (
+                                    <>
+                                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                                        {userToEdit ? "Salvando..." : "Cadastrando..."}
+                                    </>
+                                ) : (
+                                    userToEdit ? "Salvar Alterações" : "Cadastrar Usuário"
+                                )}
+                            </button>
                         )}
-                    </button>
+
+                        {/* Botão para fechar sem cadastrar biometria (apenas para novo usuário criado) */}
+                        {usuarioCriado && !userToEdit && (
+                            <button
+                                className="w-full rounded-full py-3 text-base font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+                                onClick={handleCloseWithoutBiometry}
+                            >
+                                Fechar sem Cadastrar Biometria
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>
