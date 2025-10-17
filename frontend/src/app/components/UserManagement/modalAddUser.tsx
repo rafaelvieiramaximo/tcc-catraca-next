@@ -301,7 +301,6 @@ export default function AddUserModal({
                     nome_usuario: nome
                 });
 
-                // FECHAR MODAL APÓS SUCESSO (apenas para novo usuário)
                 if (!userToEdit) {
                     setTimeout(() => {
                         onUserAdded();
@@ -311,7 +310,6 @@ export default function AddUserModal({
 
                 return true;
             } else {
-                // Tratamento específico para erro de sensor
                 let mensagemErro = result.error;
                 if (result.error.includes('Sensor não disponível')) {
                     mensagemErro = '❌ Sensor biométrico não está disponível. Verifique a conexão da catraca.';
@@ -364,7 +362,6 @@ export default function AddUserModal({
             setLoading(true);
 
             if (userToEdit) {
-                // Editar usuário existente
                 const result = await databaseService.updateUser(userToEdit.id, {
                     ...formData,
                     tipo: formData.tipo,
@@ -387,7 +384,6 @@ export default function AddUserModal({
                     alert(result.error || "Não foi possível editar o usuário.");
                 }
             } else {
-                // NOVO FLUXO: Criar usuário SEM biometria (apenas salvar no banco)
                 const result = await databaseService.createUser({
                     nome: formData.nome.trim(),
                     tipo: formData.tipo,
@@ -395,7 +391,6 @@ export default function AddUserModal({
                 });
 
                 if (result.success && result.userId) {
-                    // Se há imagem, fazer upload
                     if (imagemFile) {
                         await databaseService.processAndUploadUserImage(
                             result.userId,
@@ -404,7 +399,6 @@ export default function AddUserModal({
                         );
                     }
 
-                    // Armazenar dados do usuário criado para cadastro de biometria
                     setUsuarioCriado({
                         id: result.userId,
                         nome: formData.nome.trim(),
@@ -413,7 +407,6 @@ export default function AddUserModal({
 
                     setBiometriaMensagem('✅ Usuário criado com sucesso! Agora cadastre a biometria.');
                     
-                    // Registrar log de criação
                     await databaseService.createActionLog({
                         id_usuario: result.userId,
                         identificador: formData.identificador.trim(),
@@ -448,7 +441,6 @@ export default function AddUserModal({
         }
 
         if (userToEdit) {
-            // Cadastrar biometria para usuário existente
             const sucesso = await cadastrarBiometria(
                 userToEdit.id,
                 formData.identificador,
@@ -461,7 +453,6 @@ export default function AddUserModal({
                 }, 5000);
             }
         } else if (usuarioCriado) {
-            // Cadastrar biometria para usuário recém-criado
             const sucesso = await cadastrarBiometria(
                 usuarioCriado.id,
                 usuarioCriado.identificador,
@@ -469,7 +460,6 @@ export default function AddUserModal({
             );
 
             if (sucesso) {
-                // O modal será fechado automaticamente na função cadastrarBiometria
             }
         } else {
             setBiometriaMensagem('❌ Crie o usuário primeiro antes de cadastrar a biometria');
@@ -487,11 +477,10 @@ export default function AddUserModal({
         setPreviewUrl(null);
         setBiometriaMensagem('');
         setCadastrandoBiometria(false);
-        setUsuarioCriado(null); // Resetar estado ao fechar
+        setUsuarioCriado(null);
         onClose();
     };
 
-    // Função para fechar sem cadastrar biometria (apenas para novo usuário criado)
     const handleCloseWithoutBiometry = () => {
         setUsuarioCriado(null);
         onUserAdded();
@@ -500,7 +489,6 @@ export default function AddUserModal({
 
     if (!visible) return null;
 
-    // Determinar se os campos devem estar bloqueados
     const camposBloqueados = !!usuarioCriado && !userToEdit;
 
     return (
@@ -520,9 +508,7 @@ export default function AddUserModal({
                     </button>
                 </div>
 
-                {/* Form */}
                 <div className="max-h-[70vh] overflow-y-auto p-5">
-                    {/* Status da Catraca */}
                     <div className="mb-4 p-3 bg-gray-50 rounded-lg border">
                         <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
@@ -544,7 +530,6 @@ export default function AddUserModal({
                             </button>
                         </div>
 
-                        {/* Mensagem de Biometria */}
                         {biometriaMensagem && (
                             <div className={`text-sm p-2 rounded mt-2 ${
                                 biometriaMensagem.includes('❌') ? 'bg-red-100 text-red-700 border border-red-200' :
@@ -557,7 +542,6 @@ export default function AddUserModal({
                         )}
                     </div>
 
-                    {/* Seção de Imagem */}
                     <div className="mb-5">
                         <div className="text-base font-semibold text-gray-800 mb-2">Foto do Perfil</div>
                         <div className="flex justify-center">
@@ -768,7 +752,6 @@ export default function AddUserModal({
                         </p>
                     </div>
 
-                    {/* Botão para cadastrar biometria (SEMPRE VISÍVEL quando aplicável) */}
                     {(userToEdit || usuarioCriado) && (
                         <div className="mb-4">
                             <button
@@ -804,9 +787,7 @@ export default function AddUserModal({
                         </div>
                     )}
 
-                    {/* Botão Principal - COMPORTAMENTO DIFERENTE CONFORME O ESTADO */}
                     <div className="space-y-3">
-                        {/* Botão de cadastrar usuário (apenas quando não há usuário criado) */}
                         {!usuarioCriado && (
                             <button
                                 className={`w-full rounded-full py-4 text-base font-bold text-white transition-colors flex items-center justify-center ${
@@ -826,7 +807,6 @@ export default function AddUserModal({
                             </button>
                         )}
 
-                        {/* Botão para fechar sem cadastrar biometria (apenas para novo usuário criado) */}
                         {usuarioCriado && !userToEdit && (
                             <button
                                 className="w-full rounded-full py-3 text-base font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
