@@ -29,52 +29,103 @@ export default function AddUserModal({
     const [cameraActive, setCameraActive] = useState(false);
     const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
 
+    const [catracaStatus, setCatracaStatus] = useState<'online' | 'offline' | 'checking'>('checking');
+    const [biometriaMensagem, setBiometriaMensagem] = useState<string>('');
+    const [cadastrandoBiometria, setCadastrandoBiometria] = useState(false);
+
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
+    // Verificar status da catraca
+    const verificarStatusCatraca = async () => {
+        try {
+            setCatracaStatus('checking');
+            console.log('🔍 Verificando status da catraca...');
+
+            const response = await fetch('/api/catraca/status');
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            console.log('📨 Status da catraca:', result);
+
+            setCatracaStatus(result.online ? 'online' : 'offline');
+
+            if (!result.online) {
+                setBiometriaMensagem('❌ Catraca offline - biometria indisponível');
+            } else {
+                setBiometriaMensagem('✅ Catraca online - pronta para cadastro');
+                setTimeout(() => setBiometriaMensagem(''), 3000);
+            }
+        } catch (error) {
+            console.error('❌ Erro ao verificar status:', error);
+            setCatracaStatus('offline');
+            setBiometriaMensagem('❌ Erro ao conectar com a catraca');
+        }
+    };
+
+    useEffect(() => {
+        if (visible) {
+            verificarStatusCatraca();
+            // Verificar a cada 30 segundos
+            const interval = setInterval(verificarStatusCatraca, 30000);
+            return () => clearInterval(interval);
+        } else {
+            setBiometriaMensagem('');
+            setCadastrandoBiometria(false);
+        }
+
+        return () => {
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(track => track.stop());
+            }
+            if (previewUrl) {
+                URL.revokeObjectURL(previewUrl);
+            }
+        };
+    }, [visible]);
+
     useEffect(() => {
         if (userToEdit) {
+            console.log('📥 Carregando usuário para edição:', userToEdit);
             setFormData({
                 tipo: userToEdit.tipo,
                 nome: userToEdit.nome,
                 identificador: userToEdit.identificador.toString(),
             });
 
-            if (userToEdit.tem_imagem) {
-                loadUserImage(userToEdit);
-            } else {
+            setImagemFile(null);
+            if (previewUrl) {
+                URL.revokeObjectURL(previewUrl);
                 setPreviewUrl(null);
             }
+
+            if (userToEdit.tem_imagem || userToEdit.imagem_path) {
+                loadUserImage(userToEdit);
+            }
         } else {
+            console.log('🆕 Modo criação - resetando formulário');
             setFormData({
                 tipo: "ESTUDANTE" as TipoS,
                 nome: "",
                 identificador: "",
             });
-            setPreviewUrl(null);
             setImagemFile(null);
-        }
-    }, [userToEdit]);
-
-    useEffect(() => {
-        return () => {
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach(track => track.stop());
-            }
-            // Limpar URLs de preview
             if (previewUrl) {
                 URL.revokeObjectURL(previewUrl);
             }
-        };
-    }, []);
+            setPreviewUrl(null);
+        }
+    }, [userToEdit, visible]);
 
-    // Carregar imagem usando o novo sistema
     const loadUserImage = async (user: UsuarioCompleto) => {
         try {
             setImageLoading(true);
             const imageUrl = databaseService.getUserImageUrl(user);
-            
+
             if (imageUrl) {
                 setPreviewUrl(imageUrl);
             } else {
@@ -85,48 +136,6 @@ export default function AddUserModal({
             setPreviewUrl(null);
         } finally {
             setImageLoading(false);
-        }
-    };
-
-    const logUserCreation = async (userData: any, success: boolean, errorMessage?: string) => {
-        try {
-            await databaseService.createActionLog({
-                identificador: userData.identificador,
-                acao: 'CRIAR_USUARIO',
-                status: success ? 'SUCESSO' : 'ERRO',
-                detalhes: success
-                    ? `${userData.tipo} ${userData.nome} cadastrado com ${userData.tipo === 'ESTUDANTE' ? 'RA' : 'Matrícula'} ${userData.identificador}`
-                    : `Falha ao criar usuário ${userData.nome}: ${errorMessage}`,
-                nome_usuario: userData.nome
-            });
-        } catch (error) {
-            console.error('Erro ao registrar log de criação:', error);
-        }
-    };
-
-    const logUserUpdate = async (originalUser: UsuarioCompleto, updatedData: any, success: boolean, errorMessage?: string) => {
-        try {
-            const changes = [];
-
-            if (originalUser.nome !== updatedData.nome) {
-                changes.push(`nome: "${originalUser.nome}" → "${updatedData.nome}"`);
-            }
-            if (originalUser.identificador !== updatedData.identificador) {
-                changes.push(`${originalUser.tipo === 'ESTUDANTE' ? 'RA' : 'Matrícula'}: ${originalUser.identificador} → ${updatedData.identificador}`);
-            }
-
-            await databaseService.createActionLog({
-                id_usuario: originalUser.id,
-                identificador: updatedData.identificador,
-                acao: 'ATUALIZAR_USUARIO',
-                status: success ? 'SUCESSO' : 'ERRO',
-                detalhes: success
-                    ? `Usuário ID ${originalUser.id} editado: ${changes.join(', ')}`
-                    : `Falha ao editar usuário ${originalUser.nome}: ${errorMessage}`,
-                nome_usuario: updatedData.nome
-            });
-        } catch (error) {
-            console.error('Erro ao registrar log de edição:', error);
         }
     };
 
@@ -171,7 +180,6 @@ export default function AddUserModal({
             canvas.height = videoRef.current.videoHeight;
             context?.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
 
-            // Converter para File (não base64)
             canvas.toBlob((blob) => {
                 if (blob) {
                     const file = new File([blob], `photo_${Date.now()}.jpg`, {
@@ -187,19 +195,14 @@ export default function AddUserModal({
     };
 
     const switchCamera = async () => {
-        // Parar câmera atual
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => track.stop());
         }
 
-        // Alternar entre frontal e traseira
         setFacingMode(prev => prev === "user" ? "environment" : "user");
-
-        // Reiniciar câmera com novo facingMode
         await startCamera();
     };
 
-    // Salvar File diretamente
     const handleSelectImage = () => {
         const input = document.createElement('input');
         input.type = 'file';
@@ -210,22 +213,17 @@ export default function AddUserModal({
             if (target.files && target.files[0]) {
                 const file = target.files[0];
 
-                // Validar tamanho do arquivo (5MB)
                 if (file.size > 5 * 1024 * 1024) {
                     alert("A imagem deve ter no máximo 5MB");
                     return;
                 }
 
-                // Validar tipo do arquivo
                 if (!file.type.startsWith('image/')) {
                     alert("Por favor, selecione um arquivo de imagem válido");
                     return;
                 }
 
-                // Salvar o File diretamente
                 setImagemFile(file);
-                
-                // Criar URL para preview
                 const url = URL.createObjectURL(file);
                 setPreviewUrl(url);
             }
@@ -234,7 +232,6 @@ export default function AddUserModal({
         input.click();
     };
 
-    // Limpar File e preview
     const handleRemoveImage = () => {
         if (confirm("Deseja realmente remover a imagem?")) {
             setImagemFile(null);
@@ -245,9 +242,77 @@ export default function AddUserModal({
         }
     };
 
-    // Submit atualizado para usar sistema de arquivos
+    // No modal, atualize a função cadastrarBiometria:
+
+    const cadastrarBiometria = async (userId: number, identificador: string, nome: string) => {
+        try {
+            setCadastrandoBiometria(true);
+            setBiometriaMensagem('🔄 Iniciando cadastro de biometria...');
+
+            console.log('📤 Enviando dados para cadastro de biometria:', { userId, identificador, nome });
+
+            const API_BASE = process.env.NODE_ENV === 'development'
+                ? 'http://localhost:3001'
+                : '';
+
+            const response = await fetch(`${API_BASE}/api/catraca/iniciar-cadastro`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    user_id: userId,
+                    identificador: identificador,
+                    nome: nome
+                })
+            });
+
+            const result = await response.json();
+            console.log('📨 Resposta do cadastro de biometria:', result);
+
+            if (result.success) {
+                setBiometriaMensagem(`✅ Biometria cadastrada com sucesso! Posição: ${result.posicao}`);
+
+                await databaseService.createActionLog({
+                    id_usuario: userId,
+                    identificador: identificador,
+                    acao: 'CADASTRAR_BIOMETRIA',
+                    status: 'SUCESSO',
+                    detalhes: `Biometria cadastrada na posição ${result.posicao}`,
+                    nome_usuario: nome
+                });
+
+                return true;
+            } else {
+                // Tratamento específico para erro de sensor
+                let mensagemErro = result.error;
+                if (result.error.includes('Sensor não disponível')) {
+                    mensagemErro = '❌ Sensor biométrico não está disponível. Verifique a conexão da catraca.';
+                }
+
+                setBiometriaMensagem(`❌ ${mensagemErro}`);
+
+                await databaseService.createActionLog({
+                    id_usuario: userId,
+                    identificador: identificador,
+                    acao: 'CADASTRAR_BIOMETRIA',
+                    status: 'ERRO',
+                    detalhes: `Falha: ${result.error}`,
+                    nome_usuario: nome
+                });
+
+                return false;
+            }
+        } catch (error: any) {
+            console.error('❌ Erro no cadastro de biometria:', error);
+            setBiometriaMensagem(`❌ Erro de conexão: ${error.message}`);
+            return false;
+        } finally {
+            setCadastrandoBiometria(false);
+        }
+    };
+
     const handleSubmit = async () => {
-        // Validações
         if (!formData.nome.trim()) {
             alert("Por favor, preencha o nome do usuário.");
             return;
@@ -258,18 +323,12 @@ export default function AddUserModal({
             return;
         }
 
-        if (
-            formData.tipo === "ESTUDANTE" &&
-            !/^\d{13}$/.test(formData.identificador)
-        ) {
+        if (formData.tipo === "ESTUDANTE" && !/^\d{13}$/.test(formData.identificador)) {
             alert("O RA deve conter exatamente 13 números.");
             return;
         }
 
-        if (
-            formData.tipo === "FUNCIONARIO" &&
-            !/^\d{5}$/.test(formData.identificador)
-        ) {
+        if (formData.tipo === "FUNCIONARIO" && !/^\d{5}$/.test(formData.identificador)) {
             alert("A matrícula deve conter exatamente 5 números.");
             return;
         }
@@ -285,21 +344,13 @@ export default function AddUserModal({
                     identificador: formData.identificador,
                 });
 
-                // Se há uma nova imagem, fazer upload usando o novo sistema
                 if (imagemFile) {
-                    const uploadResult = await databaseService.processAndUploadUserImage(
+                    await databaseService.processAndUploadUserImage(
                         userToEdit.id,
                         formData.identificador,
                         imagemFile
                     );
-
-                    if (!uploadResult.success) {
-                        console.warn("Aviso: Imagem não foi atualizada:", uploadResult.error);
-                        // Não impedir o sucesso da edição por causa da imagem
-                    }
                 }
-
-                await logUserUpdate(userToEdit, { ...formData, identificador: formData.identificador }, result.success, result.error);
 
                 if (result.success) {
                     alert("Usuário editado com sucesso!");
@@ -309,63 +360,98 @@ export default function AddUserModal({
                     alert(result.error || "Não foi possível editar o usuário.");
                 }
             } else {
-                // Criar novo usuário
-                const result = await databaseService.createUser({
-                    nome: formData.nome.trim(),
-                    tipo: formData.tipo,
-                    identificador: formData.identificador.trim(),
-                });
+                // NOVO FLUXO: Criar usuário COM biometria
+                const formDataToSend = new FormData();
+                formDataToSend.append('nome', formData.nome.trim());
+                formDataToSend.append('tipo', formData.tipo);
+                formDataToSend.append('identificador', formData.identificador.trim());
 
-                // Se o usuário foi criado com sucesso E há uma imagem, fazer upload
-                if (result.success && result.userId && imagemFile) {
-                    const uploadResult = await databaseService.processAndUploadUserImage(
-                        result.userId,
-                        formData.identificador.trim(),
-                        imagemFile
-                    );
-
-                    if (!uploadResult.success) {
-                        console.warn("Aviso: Imagem não foi enviada:", uploadResult.error);
-                    }
+                if (imagemFile) {
+                    formDataToSend.append('image', imagemFile);
                 }
 
-                await logUserCreation({ ...formData, identificador: formData.identificador.trim() }, result.success, result.error);
+                setBiometriaMensagem('🔄 Criando usuário e cadastrando biometria...');
+
+                console.log('📤 Enviando dados para criar usuário com biometria...');
+
+                const response = await fetch('/api/users/com-biometria', {
+                    method: 'POST',
+                    body: formDataToSend
+                });
+
+                const result = await response.json();
+                console.log('📨 Resposta da criação do usuário:', result);
 
                 if (result.success) {
-                    alert("Usuário cadastrado com sucesso!");
-                    onUserAdded();
-                    onClose();
+                    setBiometriaMensagem(`✅ Usuário criado com biometria cadastrada! Posição: ${result.posicao}`);
+
+                    setTimeout(() => {
+                        onUserAdded();
+                        onClose();
+                    }, 3000);
                 } else {
-                    alert(result.error || "Não foi possível cadastrar o usuário.");
+                    alert(result.error || "Não foi possível criar o usuário.");
+                    setBiometriaMensagem('');
                 }
             }
         } catch (error: any) {
             console.error("Erro ao salvar usuário:", error);
             alert(error.message || "Erro inesperado.");
+            setBiometriaMensagem('');
         } finally {
             setLoading(false);
         }
     };
 
+    const iniciarCadastroBiometria = async () => {
+        if (catracaStatus !== 'online') {
+            setBiometriaMensagem('❌ Catraca offline - não é possível cadastrar biometria');
+            return;
+        }
+
+        if (!formData.identificador) {
+            setBiometriaMensagem('❌ Identificador do usuário é necessário');
+            return;
+        }
+
+        if (userToEdit) {
+            const sucesso = await cadastrarBiometria(
+                userToEdit.id,
+                formData.identificador,
+                formData.nome
+            );
+
+            if (sucesso) {
+                setTimeout(() => {
+                    setBiometriaMensagem('');
+                }, 5000);
+            }
+        } else {
+            setBiometriaMensagem('ℹ️ A biometria será cadastrada automaticamente ao criar o usuário');
+            setTimeout(() => setBiometriaMensagem(''), 3000);
+        }
+    };
+
     const handleClose = () => {
-        // Parar câmera se estiver ativa
         if (cameraActive) {
             stopCamera();
         }
-        // Limpar URLs de preview
         if (previewUrl) {
             URL.revokeObjectURL(previewUrl);
         }
         setImagemFile(null);
         setPreviewUrl(null);
+        setBiometriaMensagem('');
+        setCadastrandoBiometria(false);
         onClose();
     };
 
     if (!visible) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-opacity-20">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-opacity-50">
             <div className="bg-white rounded-xl w-full max-w-md max-h-[90vh] overflow-hidden shadow-2xl border border-gray-200 mx-4">
+                {/* Header */}
                 <div className="flex justify-between items-center p-5 border-b border-gray-200 bg-white">
                     <div className="text-lg font-bold text-gray-800">
                         {userToEdit ? "Editar Usuário" : "Cadastro de Usuário"}
@@ -380,13 +466,45 @@ export default function AddUserModal({
 
                 {/* Form */}
                 <div className="max-h-[70vh] overflow-y-auto p-5">
-                    {/* Seção de Imagem */}
+                    {/* Status da Catraca */}
+                    <div className="mb-4 p-3 bg-gray-50 rounded-lg border">
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                                <div className={`w-3 h-3 rounded-full ${catracaStatus === 'online' ? 'bg-green-500' :
+                                        catracaStatus === 'checking' ? 'bg-yellow-500' : 'bg-red-500'
+                                    }`} />
+                                <span className="text-sm font-medium">
+                                    Catraca: {catracaStatus === 'online' ? 'Online' :
+                                        catracaStatus === 'checking' ? 'Verificando...' : 'Offline'}
+                                </span>
+                            </div>
+                            <button
+                                onClick={verificarStatusCatraca}
+                                disabled={catracaStatus === 'checking'}
+                                className="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 disabled:bg-gray-400"
+                            >
+                                Atualizar
+                            </button>
+                        </div>
+
+                        {/* Mensagem de Biometria */}
+                        {biometriaMensagem && (
+                            <div className={`text-sm p-2 rounded mt-2 ${biometriaMensagem.includes('❌') ? 'bg-red-100 text-red-700 border border-red-200' :
+                                    biometriaMensagem.includes('✅') ? 'bg-green-100 text-green-700 border border-green-200' :
+                                        biometriaMensagem.includes('🔄') ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                                            'bg-gray-100 text-gray-700 border border-gray-200'
+                                }`}>
+                                {biometriaMensagem}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Resto do código do modal (seção de imagem, formulário) permanece igual */}
+                    {/* ... Seção de Imagem ... */}
                     <div className="mb-5">
                         <div className="text-base font-semibold text-gray-800 mb-2">Foto do Perfil</div>
-
                         <div className="flex justify-center">
                             {cameraActive ? (
-                                // Interface da Câmera
                                 <div className="text-center">
                                     <div className="relative bg-black rounded-lg overflow-hidden mb-4">
                                         <video
@@ -420,12 +538,11 @@ export default function AddUserModal({
                                     </div>
                                 </div>
                             ) : previewUrl ? (
-                                // Preview da Imagem
                                 <div className="text-center">
                                     <img
                                         src={previewUrl}
                                         alt="Preview"
-                                        className="w-30 h-30 rounded-full bg-gray-100 object-cover mb-2 mx-auto"
+                                        className="w-32 h-32 rounded-full bg-gray-100 object-cover mb-2 mx-auto border-2 border-gray-300"
                                     />
                                     <div className="flex justify-center gap-2">
                                         <button
@@ -449,9 +566,8 @@ export default function AddUserModal({
                                     </div>
                                 </div>
                             ) : (
-                                // Opções para Adicionar Foto
                                 <div className="text-center">
-                                    <div className="w-30 h-30 rounded-full bg-gray-50 border-2 border-dashed border-gray-300 flex flex-col items-center justify-center p-4 hover:border-blue-400 transition-colors mb-4 mx-auto">
+                                    <div className="w-32 h-32 rounded-full bg-gray-50 border-2 border-dashed border-gray-300 flex flex-col items-center justify-center p-4 hover:border-blue-400 transition-colors mb-4 mx-auto">
                                         <div className="text-gray-400 text-2xl mb-2">📷</div>
                                         <div className="text-gray-500 text-xs text-center">
                                             Selecione uma opção
@@ -484,7 +600,7 @@ export default function AddUserModal({
                                 <button
                                     className={`flex-1 py-3 rounded-lg border text-sm font-medium transition-colors ${formData.tipo === "ESTUDANTE"
                                         ? "bg-[#4A90A4] border-[#4A90A4] text-white"
-                                        : "bg-gray-50 border-gray-200 text-gray-600"
+                                        : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
                                         }`}
                                     onClick={() => setFormData(prev => ({ ...prev, tipo: "ESTUDANTE" }))}
                                 >
@@ -493,7 +609,7 @@ export default function AddUserModal({
                                 <button
                                     className={`flex-1 py-3 rounded-lg border text-sm font-medium transition-colors ${formData.tipo === "FUNCIONARIO"
                                         ? "bg-[#4A90A4] border-[#4A90A4] text-white"
-                                        : "bg-gray-50 border-gray-200 text-gray-600"
+                                        : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
                                         }`}
                                     onClick={() => setFormData(prev => ({ ...prev, tipo: "FUNCIONARIO" }))}
                                 >
@@ -508,7 +624,7 @@ export default function AddUserModal({
                         <div className="text-sm font-semibold text-gray-800 mb-2">Nome</div>
                         <input
                             type="text"
-                            className="w-full bg-gray-50 rounded-lg border border-gray-200 p-3 text-base text-gray-800 outline-none focus:border-[#4A90A4]"
+                            className="w-full bg-gray-50 rounded-lg border border-gray-200 p-3 text-base text-gray-800 outline-none focus:border-[#4A90A4] focus:ring-2 focus:ring-[#4A90A4] focus:ring-opacity-20"
                             value={formData.nome}
                             onChange={(e) => setFormData(prev => ({ ...prev, nome: e.target.value }))}
                             placeholder="Digite o nome completo"
@@ -516,13 +632,13 @@ export default function AddUserModal({
                     </div>
 
                     {/* Identificador */}
-                    <div className="mb-6">
+                    <div className="mb-4">
                         <div className="text-sm font-semibold text-gray-800 mb-2">
                             {formData.tipo === "FUNCIONARIO" ? "Matrícula" : "RA"}
                         </div>
                         <input
                             type="text"
-                            className="w-full bg-gray-50 rounded-lg border border-gray-200 p-3 text-base text-gray-800 outline-none focus:border-[#4A90A4]"
+                            className="w-full bg-gray-50 rounded-lg border border-gray-200 p-3 text-base text-gray-800 outline-none focus:border-[#4A90A4] focus:ring-2 focus:ring-[#4A90A4] focus:ring-opacity-20"
                             value={formData.identificador}
                             onChange={(e) => {
                                 const value = e.target.value.replace(/\D/g, "");
@@ -531,22 +647,74 @@ export default function AddUserModal({
                             placeholder={formData.tipo === "FUNCIONARIO" ? "Digite a matrícula" : "Digite o RA"}
                             maxLength={formData.tipo === "FUNCIONARIO" ? 5 : 13}
                         />
+                        <p className="text-xs text-gray-500 mt-1">
+                            {formData.tipo === "FUNCIONARIO"
+                                ? "5 dígitos numéricos"
+                                : "13 dígitos numéricos"
+                            }
+                        </p>
                     </div>
 
-                    {/* Botão */}
+                    {/* Botão para cadastrar biometria (apenas para edição) */}
+                    {userToEdit && (
+                        <div className="mb-4">
+                            <button
+                                onClick={iniciarCadastroBiometria}
+                                disabled={cadastrandoBiometria || loading || catracaStatus !== 'online' || !formData.identificador}
+                                className={`w-full py-3 rounded-lg border text-sm font-medium transition-colors flex items-center justify-center gap-2 ${(cadastrandoBiometria || loading || catracaStatus !== 'online' || !formData.identificador)
+                                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                        : 'bg-green-500 text-white hover:bg-green-600'
+                                    }`}
+                            >
+                                {cadastrandoBiometria ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                        Cadastrando Biometria...
+                                    </>
+                                ) : (
+                                    <>
+                                        <span>📝</span>
+                                        Cadastrar/Atualizar Biometria
+                                    </>
+                                )}
+                            </button>
+                            <p className="text-xs text-gray-500 mt-1 text-center">
+                                {!formData.identificador
+                                    ? "Preencha o identificador primeiro"
+                                    : catracaStatus !== 'online'
+                                        ? "Aguardando conexão com a catraca"
+                                        : "Clique para cadastrar a digital na catraca"}
+                            </p>
+                        </div>
+                    )}
+
+                    {/* Informação sobre biometria para novo usuário */}
+                    {!userToEdit && (
+                        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                            <div className="flex items-center gap-2">
+                                <span className="text-blue-500">ℹ️</span>
+                                <span className="text-sm text-blue-700">
+                                    A biometria será cadastrada automaticamente após criar o usuário
+                                </span>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Botão Principal */}
                     <button
-                        className={`w-full rounded-full py-4 text-base font-bold text-white transition-colors ${loading ? "bg-gray-400" : "bg-[#4A90A4] hover:bg-[#3a7a8a]"
+                        className={`w-full rounded-full py-4 text-base font-bold text-white transition-colors flex items-center justify-center ${loading ? "bg-gray-400 cursor-not-allowed" : "bg-[#4A90A4] hover:bg-[#3a7a8a]"
                             }`}
                         onClick={handleSubmit}
                         disabled={loading}
                     >
-                        {loading
-                            ? userToEdit
-                                ? "Salvando..."
-                                : "Cadastrando..."
-                            : userToEdit
-                                ? "Salvar"
-                                : "Cadastrar"}
+                        {loading ? (
+                            <>
+                                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                                {userToEdit ? "Salvando..." : "Cadastrando..."}
+                            </>
+                        ) : (
+                            userToEdit ? "Salvar Alterações" : "Cadastrar Usuário"
+                        )}
                     </button>
                 </div>
             </div>
