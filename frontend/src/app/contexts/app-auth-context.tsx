@@ -20,11 +20,13 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<UsuarioCompleto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const router = useRouter();
 
   const handleLoginSuccess = (user: UsuarioCompleto) => {
     setIsAuthenticated(true);
     setCurrentUser(user);
+    setIsLoggingOut(false);
     if (typeof window !== 'undefined') {
       localStorage.setItem('fatec-portaria-user', JSON.stringify(user));
       localStorage.setItem('fatec-portaria-auth', 'true');
@@ -32,13 +34,19 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const handleLogout = () => {
-    router.push('/');
+    setIsLoggingOut(true);
     setIsAuthenticated(false);
     setCurrentUser(null);
+    
     if (typeof window !== 'undefined') {
       localStorage.removeItem('fatec-portaria-user');
       localStorage.removeItem('fatec-portaria-auth');
     }
+    
+    setTimeout(() => {
+      router.push('/');
+      setTimeout(() => setIsLoggingOut(false), 1000);
+    }, 100);
   };
 
   const checkDatabaseConnection = async () => {

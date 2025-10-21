@@ -2,29 +2,37 @@
 'use client';
 
 import { useAppAuth } from '../contexts/app-auth-context';
-import Menu from '../components/Menu';
 import LoadingScreen from '../components/loadingScreen';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import Menu from '../components/Menu/index';
 
 export default function AdminPage() {
-  const { currentUser, handleLogout, loading } = useAppAuth();
+  const { currentUser, handleLogout, loading, isAuthenticated } = useAppAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push('/');
+    }
+  }, [loading, isAuthenticated, router]);
 
   if (loading) {
     return <LoadingScreen />;
   }
-  if (currentUser?.tipo !='ADMIN') {
-      return (
+  if (!currentUser || currentUser.tipo !== 'ADMIN') {
+    return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
           <div className="text-red-500 text-lg mb-4">Erro: Usuário não autenticado</div>
-          <button 
+          <button
             onClick={() => window.location.href = '/'}
             className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
           >
             Voltar ao Login
           </button>
         </div>
-      );
-    }else{
-      return <Menu user={currentUser} onLogout={handleLogout} />;
-    }
-  
+    )
+  }
+
+  return <Menu user={currentUser} onLogout={handleLogout} />;
 }

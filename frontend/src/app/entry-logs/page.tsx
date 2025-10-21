@@ -1,32 +1,41 @@
-// app/entry-logs/page.tsx
+// app/admin/page.tsx
 'use client';
 
 import { useAppAuth } from '../contexts/app-auth-context';
-import EntryLogs from '../components/EntryLogs/page';
 import LoadingScreen from '../components/loadingScreen';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import EntryLogs from '../components/EntryLogs/page';
 
-export default function EntryLogsPage() {
-  const { currentUser, handleLogout, loading } = useAppAuth();
+export default function AdminPage() {
+  const { currentUser, handleLogout, loading, isAuthenticated } = useAppAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push('/');
+    }
+  }, [loading, isAuthenticated, router]);
 
   if (loading) {
     return <LoadingScreen />;
   }
-
-  if (currentUser?.tipo !== 'ADMIN' && currentUser?.tipo !== 'PORTARIA') {
+  if (
+    !currentUser ||
+    (currentUser.tipo !== 'PORTARIA' && currentUser.tipo !== 'ADMIN')
+  ) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
-        <div className="text-red-500 text-lg mb-4">Erro: Usuário não autenticado</div>
-        <button
-          onClick={() => window.location.href = '/'}
-          className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-        >
-          Voltar ao Login
-        </button>
-      </div>
-    );
-  } else {
-    return <EntryLogs user={currentUser} onLogout={handleLogout} />;
+        <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
+          <div className="text-red-500 text-lg mb-4">Erro: Usuário não autenticado</div>
+          <button
+            onClick={() => window.location.href = '/'}
+            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+          >
+            Voltar ao Login
+          </button>
+        </div>
+    )
   }
 
-
+  return <EntryLogs user={currentUser} onLogout={handleLogout} />;
 }
