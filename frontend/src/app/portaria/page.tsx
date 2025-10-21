@@ -16,7 +16,7 @@ export default function PortariaPage() {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
                 <div className="text-red-500 text-lg mb-4">Erro: Usuário não autenticado</div>
-                <button 
+                <button
                     onClick={() => window.location.href = '/'}
                     className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
                 >
@@ -24,7 +24,9 @@ export default function PortariaPage() {
                 </button>
             </div>
         );
+    } else {
+
+        return <RegisterEntry user={currentUser} onLogout={handleLogout} />;
     }
 
-    return <RegisterEntry user={currentUser} onLogout={handleLogout} />;
 }

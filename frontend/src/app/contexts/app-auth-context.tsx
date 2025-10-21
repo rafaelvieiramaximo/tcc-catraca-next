@@ -32,13 +32,13 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const handleLogout = () => {
+    router.push('/');
     setIsAuthenticated(false);
     setCurrentUser(null);
     if (typeof window !== 'undefined') {
       localStorage.removeItem('fatec-portaria-user');
       localStorage.removeItem('fatec-portaria-auth');
     }
-    router.push('/');
   };
 
   const checkDatabaseConnection = async () => {
