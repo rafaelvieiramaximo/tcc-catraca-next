@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from "react";
-import { databaseService, UsuarioCompleto } from "../../services/database-service";
+import { databaseService, UsuarioCompleto, useFingerprintStatus } from "../../services/database-service";
 import Header from "../Header";
 import MenuNavigation from "../MenuNavigation";
 import AddUserModal from "./modalAddUser";
@@ -24,6 +24,20 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
   const [limit] = useState<number>(50);
   const [offset, setOffset] = useState<number>(0);
   const [hasMore, setHasMore] = useState<boolean>(true);
+
+  // Hook para status das digitais
+  const { data: fingerprintData, loading: fingerprintLoading } = useFingerprintStatus();
+
+  // Mapa rápido para verificar se usuário tem digital
+  const fingerprintMap = React.useMemo(() => {
+    const map = new Map();
+    if (fingerprintData?.users) {
+      fingerprintData.users.forEach(user => {
+        map.set(user.user_id, user.has_fingerprint);
+      });
+    }
+    return map;
+  }, [fingerprintData]);
 
   useEffect(() => {
     loadUsers(0, false);
@@ -149,6 +163,67 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
     }
   };
 
+  // Função para obter o ícone de digital baseado no status
+  const getFingerprintIcon = (userId: number) => {
+    const hasFingerprint = fingerprintMap.get(userId.toString());
+    
+    if (hasFingerprint === undefined) {
+      // Ainda carregando ou usuário não encontrado
+      return (
+        <div className="w-6 h-6 flex items-center justify-center" title="Verificando status da digital...">
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400"></div>
+        </div>
+      );
+    }
+
+    if (hasFingerprint) {
+      return (
+        <img
+          src="/assets/images/right_finger.svg"
+          alt="Digital cadastrada"
+          className="w-6 h-6"
+          title="Digital cadastrada"
+          onError={(e) => {
+            // Fallback para emoji se a imagem não carregar
+            const target = e.target as HTMLImageElement;
+            target.style.display = 'none';
+            target.nextSibling && ((target.nextSibling as HTMLElement).style.display = 'inline');
+          }}
+        />
+      );
+    } else {
+      return (
+        <img
+          src="/assets/images/wrong_finger.svg"
+          alt="Digital não cadastrada"
+          className="w-6 h-6 opacity-50"
+          title="Digital não cadastrada"
+          onError={(e) => {
+            // Fallback para emoji se a imagem não carregar
+            const target = e.target as HTMLImageElement;
+            target.style.display = 'none';
+            target.nextSibling && ((target.nextSibling as HTMLElement).style.display = 'inline');
+          }}
+        />
+      );
+    }
+  };
+
+  // Fallback emoji (será mostrado apenas se a imagem não carregar)
+  const getFingerprintFallback = (userId: number) => {
+    const hasFingerprint = fingerprintMap.get(userId.toString());
+    
+    if (hasFingerprint === undefined) {
+      return null;
+    }
+
+    return hasFingerprint ? (
+      <span className="text-green-500 text-lg hidden" title="Digital cadastrada">✅</span>
+    ) : (
+      <span className="text-red-500 text-lg hidden" title="Digital não cadastrada">❌</span>
+    );
+  };
+
   if (loading && offset === 0) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -190,6 +265,26 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
             </button>
           </div>
 
+          {/* Estatísticas de Digitais */}
+          {!fingerprintLoading && fingerprintData && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <div className="text-2xl font-bold text-blue-800">{fingerprintData.total_users}</div>
+                  <div className="text-sm text-blue-600">Total Usuários</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-green-600">{fingerprintData.users_with_fingerprint}</div>
+                  <div className="text-sm text-green-600">Com Digital</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-red-600">{fingerprintData.users_without_fingerprint}</div>
+                  <div className="text-sm text-red-600">Sem Digital</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="bg-white rounded-lg p-4 mb-4 shadow-sm border">
             {filteredUsers.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-10">
@@ -206,29 +301,39 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
               >
                 {filteredUsers.map((user) => (
                   <div key={user.id} className="bg-gray-50 rounded-lg p-4 mb-3 flex items-center justify-between border border-gray-200 shadow-sm">
-                    <img
-                      src={user.imagem_url ?? undefined}
-                      alt={user.nome}
-                      className="w-12 h-12 rounded-full mr-4 object-cover"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
-                      }}
-                    />
-                    <div className="flex flex-1">
-                      <div className="flex-1 pr-2">
-                        <div className="text-xs font-semibold text-gray-600 mb-1">Identificador</div>
-                        <div className="text-sm text-gray-800 font-medium">{user.identificador}</div>
+                    <div className="flex items-center">
+                      {/* Foto do usuário */}
+                      <img
+                        src={user.imagem_url ?? undefined}
+                        alt={user.nome}
+                        className="w-12 h-12 rounded-full mr-4 object-cover"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                        }}
+                      />
+                      
+                      {/* Ícone de digital */}
+                      <div className="mr-4 relative">
+                        {getFingerprintIcon(user.id)}
+                        {getFingerprintFallback(user.id)}
                       </div>
 
-                      <div className="flex-1 pr-2">
-                        <div className="text-xs font-semibold text-gray-600 mb-1">Nome</div>
-                        <div className="text-sm text-gray-800 font-medium">{user.nome}</div>
-                      </div>
+                      <div className="flex flex-1">
+                        <div className="flex-1 pr-2">
+                          <div className="text-xs font-semibold text-gray-600 mb-1">Identificador</div>
+                          <div className="text-sm text-gray-800 font-medium">{user.identificador}</div>
+                        </div>
 
-                      <div className="flex-1 pr-2">
-                        <div className="text-xs font-semibold text-gray-600 mb-1">Tipo</div>
-                        <div className="text-sm text-gray-800 font-medium">{user.tipo}</div>
+                        <div className="flex-1 pr-2">
+                          <div className="text-xs font-semibold text-gray-600 mb-1">Nome</div>
+                          <div className="text-sm text-gray-800 font-medium">{user.nome}</div>
+                        </div>
+
+                        <div className="flex-1 pr-2">
+                          <div className="text-xs font-semibold text-gray-600 mb-1">Tipo</div>
+                          <div className="text-sm text-gray-800 font-medium">{user.tipo}</div>
+                        </div>
                       </div>
                     </div>
 

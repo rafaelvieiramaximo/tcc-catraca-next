@@ -669,7 +669,88 @@ app.get('/api/logs/entrada', async (req, res) => {
   }
 });
 
+// ==================== ENDPOINTS FINGER ====================
 
+app.get('/api/users/:id/finger', async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const query = `
+      SELECT 
+        user_id,
+        template_position
+      FROM user_finger 
+      WHERE user_id = $1
+      ORDER BY template_position
+    `;
+
+    const result = await pool.query(query, [userId]);
+
+    if (result.rows.length === 0) {
+      return res.json({
+        user_id: userId,
+        has_fingerprint: false,
+        fingerprints: [],
+        fingerprint_count: 0
+      });
+    }
+
+    res.json({
+      user_id: userId,
+      has_fingerprint: true,
+      fingerprints: result.rows,
+      fingerprint_count: result.rows.length
+    });
+
+  } catch (error) {
+    console.error('Error fetching finger data:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      details: error.message
+    });
+  }
+});
+
+app.get('/api/users/fingerprints/status', async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        u.id as user_id,
+        u.nome,
+        u.tipo,
+        u.identificador,
+        u.imagem_path,
+        COUNT(uf.template_position) as fingerprint_count,
+        CASE 
+          WHEN COUNT(uf.template_position) > 0 THEN true 
+          ELSE false 
+        END as has_fingerprint,
+        ARRAY_AGG(uf.template_position) as fingerprint_positions
+      FROM usuario u
+      LEFT JOIN user_finger uf ON u.id = uf.user_id
+      GROUP BY u.id, u.nome, u.tipo, u.identificador, u.imagem_path
+      ORDER BY u.nome
+    `;
+
+    const result = await pool.query(query);
+
+    res.json({
+      success: true,
+      users: result.rows,
+      total_users: result.rows.length,
+      users_with_fingerprint: result.rows.filter(user => user.has_fingerprint).length,
+      users_without_fingerprint: result.rows.filter(user => !user.has_fingerprint).length
+    });
+
+  } catch (error) {
+    console.error('Error fetching fingerprints status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      details: error.message
+    });
+  }
+});
 // ==================== ENDPOINTS CATRACA ====================
 
 const CATRACA_API_URL = 'http://192.168.11.220:5000';

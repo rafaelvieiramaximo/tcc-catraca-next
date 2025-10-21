@@ -1,3 +1,4 @@
+// services/database-service.ts
 'use client';
 
 import { useState, useEffect } from "react";
@@ -18,8 +19,8 @@ export interface Usuario {
   imagem_atualizada_em?: string;
   tem_imagem?: boolean;
   imagem_base64?: string | null;
-  imagem_path?: string | null; // NOVO CAMPO
-  imagem_url?: string | null;  // NOVO CAMPO
+  imagem_path?: string | null;
+  imagem_url?: string | null;
 }
 
 export interface NovoUsuarioSystem {
@@ -88,14 +89,40 @@ interface ImageOperationResponse {
   imageUrl?: string;
 }
 
+// ==================== NOVOS TIPOS PARA DIGITAIS ====================
+
+export interface FingerprintData {
+  user_id: string;
+  template_position: number;
+}
+
+export interface UserFingerprintStatus {
+  user_id: string;
+  nome: string;
+  tipo: string;
+  identificador: string;
+  foto?: string;
+  has_fingerprint: boolean;
+  fingerprint_count: number;
+  fingerprint_positions: number[];
+}
+
+export interface FingerprintStatusResponse {
+  success: boolean;
+  users: UserFingerprintStatus[];
+  total_users: number;
+  users_with_fingerprint: number;
+  users_without_fingerprint: number;
+}
+
 // Classe principal do serviço de banco de dados
 class DatabaseService {
   private baseUrl: string;
   private apiBaseUrl: string;
 
   constructor() {
-    this.baseUrl = API_BASE_URL.replace('/api', ''); // Remove /api para acessar arquivos estáticos
-    this.apiBaseUrl = API_BASE_URL; // Mantém /api para endpoints da API
+    this.baseUrl = API_BASE_URL.replace('/api', '');
+    this.apiBaseUrl = API_BASE_URL;
   }
 
   private async makeRequest(endpoint: string, options: RequestInit = {}) {
@@ -120,9 +147,69 @@ class DatabaseService {
     }
   }
 
-  // ==================== NOVAS FUNÇÕES PARA SISTEMA DE ARQUIVOS ====================
+  // ==================== NOVAS FUNÇÕES PARA VERIFICAÇÃO DE DIGITAIS ====================
 
-  // NO MÉTODO uploadUserImageFile - ADICIONE ESTE LOG
+  /**
+   * Verifica o status de digital de um usuário específico
+   */
+  async getUserFingerprintStatus(userId: string): Promise<{
+    user_id: string;
+    has_fingerprint: boolean;
+    fingerprints: FingerprintData[];
+    fingerprint_count: number;
+  }> {
+    try {
+      const response = await this.makeRequest(`/users/${userId}/finger`);
+      return response;
+    } catch (error) {
+      console.error('Get user fingerprint status error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Verifica o status de digitais de todos os usuários
+   */
+  async getAllUsersFingerprintStatus(): Promise<FingerprintStatusResponse> {
+    try {
+      const response = await this.makeRequest('/users/fingerprints/status');
+      return response;
+    } catch (error) {
+      console.error('Get all fingerprints status error:', error);
+      throw error;
+    }
+  }
+
+  async getFingerprintStats(): Promise<{
+    total_users: number;
+    users_with_fingerprint: number;
+    users_without_fingerprint: number;
+    fingerprint_coverage: number;
+  }> {
+    try {
+      const data = await this.getAllUsersFingerprintStatus();
+      
+      return {
+        total_users: data.total_users,
+        users_with_fingerprint: data.users_with_fingerprint,
+        users_without_fingerprint: data.users_without_fingerprint,
+        fingerprint_coverage: data.total_users > 0 
+          ? Math.round((data.users_with_fingerprint / data.total_users) * 100) 
+          : 0
+      };
+    } catch (error) {
+      console.error('Get fingerprint stats error:', error);
+      return {
+        total_users: 0,
+        users_with_fingerprint: 0,
+        users_without_fingerprint: 0,
+        fingerprint_coverage: 0
+      };
+    }
+  }
+
+  // ==================== FUNÇÕES EXISTENTES PARA IMAGENS ====================
+
   async uploadUserImageFile(userId: number, identificador: string, imageFile: File): Promise<ImageOperationResponse> {
     try {
       console.log('📤 Iniciando upload - userId:', userId, 'identificador:', identificador, 'file:', imageFile.name, 'size:', imageFile.size);
@@ -130,7 +217,6 @@ class DatabaseService {
       const formData = new FormData();
       formData.append('image', imageFile);
       formData.append('identificador', identificador);
-      // NÃO enviar userId no formData - já está na URL
 
       console.log('📋 FormData criado, enviando requisição...');
 
@@ -169,18 +255,16 @@ class DatabaseService {
       };
     }
   }
+
   getUserImageUrl(user: UsuarioCompleto): string | null {
-    // Prioridade para o novo sistema (arquivos)
     if (user.imagem_path) {
       return `${this.baseUrl}/${user.imagem_path}`;
     }
 
-    // Fallback para sistema antigo (base64) - durante transição
     if (user.imagem_base64) {
       return user.imagem_base64;
     }
 
-    // Fallback para endpoint de imagem
     if (user.tem_imagem) {
       return `${this.apiBaseUrl}/users/${user.id}/image`;
     }
@@ -188,12 +272,10 @@ class DatabaseService {
     return null;
   }
 
-  /**
-   * Obtém a URL da imagem pelo identificador (para RegisterEntry)
-   */
   getUserImageByIdentificador(identificador: string): string {
     return `${this.baseUrl}/assets/users/${identificador}.jpg`;
   }
+
   async checkUserImageExists(identificador: string): Promise<boolean> {
     try {
       const imageUrl = this.getUserImageByIdentificador(identificador);
@@ -216,14 +298,12 @@ class DatabaseService {
       if (imageFile instanceof File) {
         fileToUpload = imageFile;
       } else {
-        // Se é Blob, converte para File
         fileToUpload = new File([imageFile], fileName, {
           type: 'image/jpeg',
           lastModified: Date.now()
         });
       }
 
-      // Faz upload usando o novo sistema de arquivos
       return await this.uploadUserImageFile(userId, identificador, fileToUpload);
     } catch (error) {
       console.error('Process and upload image error:', error);
@@ -236,36 +316,26 @@ class DatabaseService {
 
   // ==================== FUNÇÕES AUXILIARES PARA IMAGENS (COMPATIBILIDADE) ====================
 
-  /**
-   * Valida se a string base64 é uma imagem válida
-   */
   isValidBase64Image(base64String: string): boolean {
     if (!base64String) return false;
 
     try {
-      // Remove o prefixo data URL se existir
       const base64Data = base64String.replace(/^data:image\/\w+;base64,/, '');
 
-      // Verifica se é base64 válido
       const regex = /^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==)?$/;
       if (!regex.test(base64Data)) {
         return false;
       }
 
-      // Calcula tamanho aproximado em bytes (base64 é ~33% maior que o original)
       const stringLength = base64Data.length;
       const sizeInBytes = 4 * Math.ceil(stringLength / 3) * 0.5624896334383812;
 
-      // Verifica se é menor que 5MB
       return sizeInBytes <= 5 * 1024 * 1024;
     } catch (error) {
       return false;
     }
   }
 
-  /**
-   * Converte um arquivo File para base64 (para compatibilidade)
-   */
   async fileToBase64(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -283,9 +353,6 @@ class DatabaseService {
     });
   }
 
-  /**
-   * Processa imagem do input file para base64 (para compatibilidade)
-   */
   async processImageForUpload(file: File): Promise<string> {
     try {
       const base64String = await this.fileToBase64(file);
@@ -323,10 +390,6 @@ class DatabaseService {
 
   // ==================== OPERAÇÕES COM IMAGENS (COMPATIBILIDADE) ====================
 
-  /**
-   * Faz upload da imagem de um usuário (SISTEMA ANTIGO - base64)
-   * MANTIDO PARA COMPATIBILIDADE
-   */
   async uploadUserImage(userId: number, imageBase64: string): Promise<ImageOperationResponse> {
     try {
       if (!this.isValidBase64Image(imageBase64)) {
@@ -356,10 +419,6 @@ class DatabaseService {
     }
   }
 
-  /**
-   * Obtém a imagem do usuário em base64 (SISTEMA ANTIGO)
-   * MANTIDO PARA COMPATIBILIDADE
-   */
   async getUserImageBase64(userId: number): Promise<string | null> {
     try {
       const response = await this.makeRequest(`/users/${userId}?incluir_imagem=true`);
@@ -370,9 +429,6 @@ class DatabaseService {
     }
   }
 
-  /**
-   * Remove a imagem do usuário (COMPATÍVEL COM AMBOS SISTEMAS)
-   */
   async deleteUserImage(userId: number): Promise<ImageOperationResponse> {
     try {
       const response = await this.makeRequest(`/users/${userId}/image`, {
@@ -399,7 +455,6 @@ class DatabaseService {
       const response = await this.makeRequest('/users');
       const users = response.users || [];
 
-      // Adicionar URLs das imagens para todos os usuários
       return users.map((user: UsuarioCompleto) => ({
         ...user,
         imagem_url: this.getUserImageUrl(user)
@@ -419,7 +474,6 @@ class DatabaseService {
         return null;
       }
 
-      // Adicionar URL da imagem se disponível
       const user = response.user;
       user.imagem_url = this.getUserImageUrl(user);
 
@@ -432,7 +486,6 @@ class DatabaseService {
 
   async createUser(userData: NovoUsuario): Promise<{ success: boolean; userId?: number; error?: string }> {
     try {
-      // Validar imagem se for fornecida (sistema antigo)
       if (userData.imagem_base64 && !this.isValidBase64Image(userData.imagem_base64)) {
         return {
           success: false,
@@ -460,7 +513,6 @@ class DatabaseService {
 
   async updateUser(id: number, userData: Partial<UsuarioCompleto & { imagem_base64?: string | null }>): Promise<{ success: boolean; user?: UsuarioCompleto; error?: string }> {
     try {
-      // Validar imagem se for fornecida (sistema antigo)
       if (userData.imagem_base64 !== undefined &&
         userData.imagem_base64 !== null &&
         !this.isValidBase64Image(userData.imagem_base64)) {
@@ -475,7 +527,6 @@ class DatabaseService {
         body: JSON.stringify(userData),
       });
 
-      // Adicionar URL da imagem ao usuário retornado
       if (response.user) {
         response.user.imagem_url = this.getUserImageUrl(response.user);
       }
@@ -511,7 +562,6 @@ class DatabaseService {
 
   async adicionarUsuario(usuario: NovoUsuarioSystem): Promise<{ success: boolean; userId?: number; error?: string }> {
     try {
-      // Validar imagem se for fornecida (sistema antigo)
       if (usuario.imagem_base64 && !this.isValidBase64Image(usuario.imagem_base64)) {
         return {
           success: false,
@@ -648,9 +698,6 @@ class DatabaseService {
 
   // ==================== MÉTODOS ADICIONAIS PARA WEB ====================
 
-  /**
-   * Verifica se o servidor está online
-   */
   async isServerOnline(): Promise<boolean> {
     try {
       await this.healthCheck();
@@ -660,9 +707,6 @@ class DatabaseService {
     }
   }
 
-  /**
-   * Obtém estatísticas do sistema
-   */
   async getSystemStats(): Promise<{
     totalUsers: number;
     totalEntriesToday: number;
@@ -685,11 +729,100 @@ class DatabaseService {
 // Instância única do serviço
 export const databaseService = new DatabaseService();
 
-// Funções auxiliares para uso em componentes
+// ==================== NOVOS HOOKS PARA DIGITAIS ====================
+
+export const useFingerprintStatus = () => {
+  const [data, setData] = useState<FingerprintStatusResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const fingerprintData = await databaseService.getAllUsersFingerprintStatus();
+      setData(fingerprintData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao carregar status das digitais');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  return { data, loading, error, refetch: loadData };
+};
+
+export const useFingerprintStats = () => {
+  const [stats, setStats] = useState<{
+    total_users: number;
+    users_with_fingerprint: number;
+    users_without_fingerprint: number;
+    fingerprint_coverage: number;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadStats = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const fingerprintStats = await databaseService.getFingerprintStats();
+      setStats(fingerprintStats);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao carregar estatísticas');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadStats();
+  }, []);
+
+  return { stats, loading, error, refetch: loadStats };
+};
 
 /**
- * Hook para verificar se o servidor está online
+ * Hook para status de digital de um usuário específico
  */
+export const useUserFingerprintStatus = (userId: string) => {
+  const [data, setData] = useState<{
+    user_id: string;
+    has_fingerprint: boolean;
+    fingerprints: FingerprintData[];
+    fingerprint_count: number;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const fingerprintData = await databaseService.getUserFingerprintStatus(userId);
+      setData(fingerprintData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao carregar status da digital');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (userId) {
+      loadData();
+    }
+  }, [userId]);
+
+  return { data, loading, error, refetch: loadData };
+};
+
+// ==================== HOOKS EXISTENTES ====================
+
 export const useServerStatus = () => {
   const [isOnline, setIsOnline] = useState<boolean>(true);
 
@@ -700,7 +833,7 @@ export const useServerStatus = () => {
     };
 
     checkServerStatus();
-    const interval = setInterval(checkServerStatus, 30000); // Verifica a cada 30 segundos
+    const interval = setInterval(checkServerStatus, 30000);
 
     return () => clearInterval(interval);
   }, []);
@@ -708,9 +841,6 @@ export const useServerStatus = () => {
   return isOnline;
 };
 
-/**
- * Hook para dados do usuário com cache
- */
 export const useUserData = (userId: number, includeImage: boolean = false) => {
   const [user, setUser] = useState<UsuarioCompleto | null>(null);
   const [loading, setLoading] = useState(true);
