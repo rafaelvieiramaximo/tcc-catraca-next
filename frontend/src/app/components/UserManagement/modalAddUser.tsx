@@ -716,7 +716,11 @@ export default function AddUserModal({
                                     : "bg-gray-50 border-gray-200 text-gray-800 focus:border-[#4A90A4] focus:ring-[#4A90A4]"
                             }`}
                             value={formData.nome}
-                            onChange={(e) => !camposBloqueados && setFormData(prev => ({ ...prev, nome: e.target.value }))}
+                            onChange = {(e) => {
+                                setFormData(prev => ({ ...prev, nome: e.target.value }));
+                                const value = e.target.value.replace(/[^a-zA-ZÀ-ÿ\s]/g, '');
+                                setFormData(prev => ({ ...prev, nome: value }));
+                            }}
                             placeholder="Digite o nome completo"
                             disabled={camposBloqueados}
                         />

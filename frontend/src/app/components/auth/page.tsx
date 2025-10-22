@@ -57,7 +57,7 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
       if (user && user.tipo === tipo) {
         setTimeout(() => {
           onLoginSuccess(user);
-        }, 1000);
+        }, 500);
         setIsLoginSuccessful(true);
       } else {
         setError("Identificador ou senha incorretos.");
