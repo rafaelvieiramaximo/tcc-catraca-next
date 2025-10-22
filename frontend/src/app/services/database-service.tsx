@@ -167,9 +167,6 @@ class DatabaseService {
     }
   // ==================== NOVAS FUNÇÕES PARA VERIFICAÇÃO DE DIGITAIS ====================
 
-  /**
-   * Verifica o status de digital de um usuário específico
-   */
   async getUserFingerprintStatus(userId: number): Promise<{ has_fingerprint: boolean; fingerprint_count: number }> {
     try {
       const response = await this.makeRequest(`/users/${userId}/finger`);

@@ -19,6 +19,7 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
   const [error, setError] = useState<string | null>(null);
   const [isApiOnline, setIsApiOnline] = useState<boolean | null>(null);
   const [triedConnection, setTriedConnection] = useState(false);
+  const [isLoginSuccessful, setIsLoginSuccessful] = useState(false);
 
   useEffect(() => {
     if (key) {
@@ -55,8 +56,10 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
 
       if (user && user.tipo === tipo) {
         onLoginSuccess(user);
+        setIsLoginSuccessful(true);
       } else {
         setError("Identificador ou senha incorretos.");
+        setIsLoginSuccessful(false);
       }
     } catch (error) {
       console.error("Login error:", error);
@@ -186,15 +189,15 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
             />
           </div>
 
-          {triedConnection && isApiOnline === null && (
+          {error && (
             <div className="error-message">
-              Verificando conexão com o sistema...
+              {error}
             </div>
           )}
 
-          {triedConnection && isApiOnline === false && (
-            <div className="error-message">
-              Não foi possível conectar ao sistema.
+          {isLoginSuccessful && (
+            <div className="success-message">
+              Login realizado com sucesso!
             </div>
           )}
 

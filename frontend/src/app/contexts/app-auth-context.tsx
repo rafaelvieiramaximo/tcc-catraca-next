@@ -43,10 +43,11 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('fatec-portaria-auth');
     }
     
-    setTimeout(() => {
-      router.push('/');
-      setTimeout(() => setIsLoggingOut(false), 1000);
-    }, 100);
+    // setTimeout(() => {
+    //   router.push('/');
+    //   setTimeout(() => setIsLoggingOut(false), 1000);
+    // }, 100);
+    router.push('/');
   };
 
   const checkDatabaseConnection = async () => {
