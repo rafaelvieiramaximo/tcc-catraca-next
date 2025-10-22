@@ -18,6 +18,7 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isApiOnline, setIsApiOnline] = useState<boolean | null>(null);
+  const [triedConnection, setTriedConnection] = useState(false);
 
   useEffect(() => {
     if (key) {
@@ -30,19 +31,6 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
     }
   }, [key]);
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const ok = await databaseService.connectionTest();
-        if (mounted) setIsApiOnline(Boolean(ok));
-      } catch (err) {
-        if (mounted) setIsApiOnline(false);
-      }
-    })();
-    return () => { mounted = false; };
-  }, []);
-
   async function handleLogin() {
     if (!identificador || !senha || !tipo) {
       setError("Preencha todos os campos");
@@ -51,8 +39,18 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
 
     setLoading(true);
     setError(null);
+    setTriedConnection(true);
+    setIsApiOnline(null);
 
     try {
+      const online = await databaseService.connectionTest();
+      if (!online) {
+        setIsApiOnline(false);
+        setError("Não foi possível conectar ao sistema.");
+        return;
+      }
+      setIsApiOnline(true);
+
       const user = await databaseService.authenticateUser(identificador, senha, tipo);
 
       if (user && user.tipo === tipo) {
@@ -188,20 +186,13 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
             />
           </div>
 
-          {/* Error Message */}
-          {error && (
-            <div className="error-message">
-              {error}
-            </div>
-          )}
-
-          {isApiOnline === null && (
+          {triedConnection && isApiOnline === null && (
             <div className="error-message">
               Verificando conexão com o sistema...
             </div>
           )}
 
-          {isApiOnline === false && (
+          {triedConnection && isApiOnline === false && (
             <div className="error-message">
               Não foi possível conectar ao sistema.
             </div>
