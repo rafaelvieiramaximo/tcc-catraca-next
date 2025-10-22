@@ -20,56 +20,21 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
   const [editUser, setEditUser] = useState<UsuarioCompleto | null>(null);
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
 
-  // Estados para scroll infinito
-  const [limit] = useState<number>(50);
-  const [offset, setOffset] = useState<number>(0);
-  const [hasMore, setHasMore] = useState<boolean>(true);
-
   useEffect(() => {
-    loadUsers(0, false);
+    loadUsers();
   }, []);
 
-  const loadUsers = async (newOffset: number = 0, append: boolean = false) => {
+  const loadUsers = async () => {
     try {
       setLoading(true);
-      const allUsers = await databaseService.getAllUsers();
-
-      // Simular paginação
-      const startIndex = newOffset;
-      const endIndex = startIndex + limit;
-      const paginatedUsers = allUsers.slice(startIndex, endIndex);
-
-      if (append) {
-        setUsers(prev => [...prev, ...paginatedUsers]);
-        setFilteredUsers(prev => [...prev, ...paginatedUsers]);
-      } else {
-        setUsers(paginatedUsers);
-        setFilteredUsers(paginatedUsers);
-      }
-
-      setOffset(newOffset);
-      setHasMore(endIndex < allUsers.length);
-
+      const usersData = await databaseService.getAllUsersWithFingerprintStatus();
+      setUsers(usersData);
+      setFilteredUsers(usersData);
     } catch (error) {
       console.error("Erro ao carregar usuários:", error);
       alert("Não foi possível carregar a lista de usuários.");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadMore = () => {
-    if (!loading && hasMore) {
-      loadUsers(offset + limit, true);
-    }
-  };
-
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-
-    // Chegou perto do final (50px do fim)
-    if (scrollHeight - scrollTop <= clientHeight + 50) {
-      loadMore();
     }
   };
 
@@ -123,16 +88,19 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
   };
 
   const handleUserAdded = async () => {
-    await loadUsers(0, false); // Recarrega do início
+    await loadUsers(); // Recarrega a lista
   };
 
   const confirmDeleteUser = async (userId: number) => {
     try {
-      await logUserDeletion(users.find(u => u.id === userId)!, true);
-      await databaseService.deleteUser(userId);
-      await loadUsers(0, false); // Recarrega do início
-      setShowDeleteSuccess(true);
-      setTimeout(() => setShowDeleteSuccess(false), 3000);
+      const userToDelete = users.find(u => u.id === userId);
+      if (userToDelete) {
+        await logUserDeletion(userToDelete, true);
+        await databaseService.deleteUser(userId);
+        await loadUsers();
+        setShowDeleteSuccess(true);
+        setTimeout(() => setShowDeleteSuccess(false), 3000);
+      }
     } catch (error) {
       console.error("Erro ao excluir usuário:", error);
       alert("Não foi possível excluir o usuário.");
@@ -149,7 +117,30 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
     }
   };
 
-  if (loading && offset === 0) {
+  // ✅ FUNÇÃO SIMPLIFICADA - USA has_fingerprint DIRETO DO USUÁRIO
+  const getFingerprintIcon = (user: UsuarioCompleto) => {
+    if (user.has_fingerprint) {
+      return (
+        <img
+          src="/assets/images/right_finger.svg"
+          alt="Digital cadastrada"
+          className="w-6 h-6"
+          title="Biometria cadastrada"
+        />
+      );
+    } else {
+      return (
+        <img
+          src="/assets/images/wrong_finger.svg"
+          alt="Digital não cadastrada"
+          className="w-6 h-6"
+          title="Biometria não cadastrada"
+        />
+      );
+    }
+  };
+
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
         <Header onLogout={handleLogout} pageName="Gerenciador de Usuários" user={user} />
@@ -200,42 +191,56 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
                 </div>
               </div>
             ) : (
-              <div
-                className="space-y-3 max-h-[60vh] "
-                onScroll={handleScroll}
-              >
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto">
                 {filteredUsers.map((user) => (
                   <div key={user.id} className="bg-gray-50 rounded-lg p-4 mb-3 flex items-center justify-between border border-gray-200 shadow-sm">
-                    <img
-                      src={user.imagem_url ?? undefined}
-                      alt={user.nome}
-                      className="w-12 h-12 rounded-full mr-4 object-cover"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
-                      }}
-                    />
-                    <div className="flex flex-1">
-                      <div className="flex-1 pr-2">
-                        <div className="text-xs font-semibold text-gray-600 mb-1">Identificador</div>
-                        <div className="text-sm text-gray-800 font-medium">{user.identificador}</div>
+                    <div className="flex items-center flex-1">
+
+                      {/* Foto do usuário */}
+                      <div className="mr-4">
+                        {user.imagem_url ? (
+                          <img
+                            src={user.imagem_url}
+                            alt={user.nome}
+                            className="w-12 h-12 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">
+                            <span className="text-sm text-gray-500 font-medium">
+                              {user.nome.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
-                      <div className="flex-1 pr-2">
-                        <div className="text-xs font-semibold text-gray-600 mb-1">Nome</div>
-                        <div className="text-sm text-gray-800 font-medium">{user.nome}</div>
-                      </div>
+                      {/* Informações do usuário */}
+                      <div className="flex flex-1 gap-6">
+                        <div className="flex-1">
+                          <div className="text-xs font-semibold text-gray-600 mb-1">Identificador</div>
+                          <div className="text-sm text-gray-800 font-medium">{user.identificador}</div>
+                        </div>
 
-                      <div className="flex-1 pr-2">
-                        <div className="text-xs font-semibold text-gray-600 mb-1">Tipo</div>
-                        <div className="text-sm text-gray-800 font-medium">{user.tipo}</div>
+                        <div className="flex-1">
+                          <div className="text-xs font-semibold text-gray-600 mb-1">Nome</div>
+                          <div className="text-sm text-gray-800 font-medium">{user.nome}</div>
+                        </div>
+
+                        <div className="flex-1">
+                          <div className="text-xs font-semibold text-gray-600 mb-1">Tipo</div>
+                          <div className="text-sm text-gray-800 font-medium">{user.tipo}</div>
+                        </div>
                       </div>
                     </div>
 
+                    <div className="mr-4">
+                      {getFingerprintIcon(user)}
+                    </div>
+                    
                     <div className="flex items-center gap-2">
                       <button
                         className="w-9 h-9 flex items-center justify-center rounded-md hover:bg-gray-100 transition-colors"
                         onClick={() => handleEditUser(user.id)}
+                        title="Editar usuário"
                       >
                         <span className="text-base">✏️</span>
                       </button>
@@ -243,36 +248,18 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
                       <button
                         className="w-9 h-9 flex items-center justify-center rounded-md hover:bg-gray-100 transition-colors"
                         onClick={() => handleDeleteUser(user.id, user.nome)}
+                        title="Excluir usuário"
                       >
                         <span className="text-base">❌</span>
                       </button>
                     </div>
                   </div>
                 ))}
-
-                {/* Loading indicator para mais dados */}
-                {loading && offset > 0 && (
-                  <div className="flex justify-center items-center p-4">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#4A90A4] mr-2"></div>
-                    <span className="text-gray-600 text-sm">Carregando mais usuários...</span>
-                  </div>
-                )}
-
-                {/* Botão Carregar Mais */}
-                {!loading && hasMore && (
-                  <div className="flex justify-center mt-4">
-                    <button
-                      onClick={loadMore}
-                      className="bg-[#4A90A4] hover:bg-[#3A7A8C] text-white px-4 py-2 rounded text-sm font-medium"
-                    >
-                      Carregar Mais
-                    </button>
-                  </div>
-                )}
               </div>
             )}
           </div>
 
+          {/* Botão Adicionar Usuário */}
           <button
             className="fixed bottom-5 right-5 bg-black rounded-full w-15 h-15 flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow"
             onClick={handleAddUser}
@@ -281,6 +268,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
           </button>
         </div>
 
+        {/* Notificação de sucesso */}
         {showDeleteSuccess && (
           <div className="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-red-500 rounded-lg px-4 py-3 shadow-lg">
             <div className="text-white font-bold text-center text-sm">
@@ -290,7 +278,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
         )}
       </div>
 
-      {/* Add User Modal */}
+      {/* Modal de Adicionar/Editar Usuário */}
       <AddUserModal
         visible={showAddModal}
         onClose={() => {
