@@ -149,6 +149,22 @@ class DatabaseService {
     }
   }
 
+   async connectionTest(): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.apiBaseUrl}/health`, { method: 'GET' });
+      if (!res.ok) return false;
+      const data = await res.json().catch(() => ({}));
+      return typeof data.success === 'boolean' ? data.success : false;
+    } catch (error) {
+      console.error('Connection test error:', error);
+      return false;
+    }
+  }
+
+    async isServerOnline(): Promise<boolean> {
+      const res = await this.healthCheck();
+      return res.success == true;
+    }
   // ==================== NOVAS FUNÇÕES PARA VERIFICAÇÃO DE DIGITAIS ====================
 
   /**
@@ -744,15 +760,6 @@ class DatabaseService {
   }
 
   // ==================== MÉTODOS ADICIONAIS ====================
-
-  async isServerOnline(): Promise<boolean> {
-    try {
-      await this.healthCheck();
-      return true;
-    } catch (error) {
-      return false;
-    }
-  }
 
   async getSystemStats(): Promise<{
     totalUsers: number;

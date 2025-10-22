@@ -17,6 +17,7 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
   const [tipo, setTipo] = useState<TipoUsuario>("ADMIN");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isApiOnline, setIsApiOnline] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (key) {
@@ -28,6 +29,19 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
       console.log("Login component reset due to key change");
     }
   }, [key]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const ok = await databaseService.connectionTest();
+        if (mounted) setIsApiOnline(Boolean(ok));
+      } catch (err) {
+        if (mounted) setIsApiOnline(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   async function handleLogin() {
     if (!identificador || !senha || !tipo) {
@@ -97,13 +111,13 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
       <div className="login-card">
         <div className="login-header">
           <div className="logo-container">
-            <Image 
-              src="/assets/images/logo_fatec.png" 
-              alt="Logo FATEC" 
-              width={120} 
+            <Image
+              src="/assets/images/logo_fatec.png"
+              alt="Logo FATEC"
+              width={120}
               height={70}
               className="logo-image"
-              priority 
+              priority
             />
           </div>
         </div>
@@ -178,6 +192,18 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
           {error && (
             <div className="error-message">
               {error}
+            </div>
+          )}
+
+          {isApiOnline === null && (
+            <div className="error-message">
+              Verificando conexão com o sistema...
+            </div>
+          )}
+
+          {isApiOnline === false && (
+            <div className="error-message">
+              Não foi possível conectar ao sistema.
             </div>
           )}
 
