@@ -728,6 +728,7 @@ app.get('/api/users/fingerprints/status', async (req, res) => {
         ARRAY_AGG(uf.template_position) as fingerprint_positions
       FROM usuario u
       LEFT JOIN user_finger uf ON u.id = uf.user_id
+      WHERE u.tipo != 'ADMIN' AND u.tipo != 'PORTARIA' AND u.tipo != 'RH'
       GROUP BY u.id, u.nome, u.tipo, u.identificador, u.imagem_path
       ORDER BY u.nome
     `;

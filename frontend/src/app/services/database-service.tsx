@@ -1,4 +1,4 @@
-// services/database-service.ts
+// services/database-service.tsx
 'use client';
 
 import { useState, useEffect } from "react";
@@ -78,6 +78,8 @@ export interface LogAction {
 
 export interface UsuarioCompleto extends Usuario {
   senha_hash?: string;
+  has_fingerprint?: boolean;
+  fingerprint_count?: number;
 }
 
 // Interface para resposta de operações com imagem
@@ -97,13 +99,13 @@ export interface FingerprintData {
 }
 
 export interface UserFingerprintStatus {
-  user_id: string;
+  user_id: number;
   nome: string;
   tipo: string;
   identificador: string;
-  foto?: string;
-  has_fingerprint: boolean;
+  imagem_path?: string;
   fingerprint_count: number;
+  has_fingerprint: boolean;
   fingerprint_positions: number[];
 }
 
@@ -152,34 +154,89 @@ class DatabaseService {
   /**
    * Verifica o status de digital de um usuário específico
    */
-  async getUserFingerprintStatus(userId: string): Promise<{
-    user_id: string;
-    has_fingerprint: boolean;
-    fingerprints: FingerprintData[];
-    fingerprint_count: number;
-  }> {
+  async getUserFingerprintStatus(userId: number): Promise<{ has_fingerprint: boolean; fingerprint_count: number }> {
     try {
       const response = await this.makeRequest(`/users/${userId}/finger`);
-      return response;
+      return {
+        has_fingerprint: response.has_fingerprint,
+        fingerprint_count: response.fingerprint_count
+      };
     } catch (error) {
       console.error('Get user fingerprint status error:', error);
-      throw error;
+      return {
+        has_fingerprint: false,
+        fingerprint_count: 0
+      };
     }
   }
 
   /**
-   * Verifica o status de digitais de todos os usuários
+   * Obtém todos os usuários com status de fingerprint
+   * Usa o endpoint otimizado que retorna tudo de uma vez
    */
-  async getAllUsersFingerprintStatus(): Promise<FingerprintStatusResponse> {
+  async getAllUsersWithFingerprintStatus(): Promise<UsuarioCompleto[]> {
     try {
       const response = await this.makeRequest('/users/fingerprints/status');
-      return response;
+      
+      if (!response.success) {
+        throw new Error(response.error || 'Erro ao buscar status das digitais');
+      }
+
+      // Mapeia a resposta para o formato UsuarioCompleto
+      const usersWithStatus: UsuarioCompleto[] = response.users.map((user: UserFingerprintStatus) => ({
+        id: user.user_id,
+        nome: user.nome,
+        tipo: user.tipo as TipoS | TipoUsuario,
+        identificador: user.identificador,
+        created_at: '', // Não retornado pelo endpoint, mas mantemos a interface
+        updated_at: '', // Não retornado pelo endpoint, mas mantemos a interface
+        imagem_path: user.imagem_path,
+        imagem_url: user.imagem_path ? `${this.baseUrl}/${user.imagem_path}` : null,
+        tem_imagem: !!user.imagem_path,
+        has_fingerprint: user.has_fingerprint,
+        fingerprint_count: user.fingerprint_count
+      }));
+
+      return usersWithStatus;
     } catch (error) {
-      console.error('Get all fingerprints status error:', error);
-      throw error;
+      console.error('Get all users with fingerprint status error:', error);
+      
+      // Fallback: busca usuários normalmente e depois verifica fingerprint individualmente
+      try {
+        console.log('🔄 Usando fallback para busca de fingerprints...');
+        const users = await this.getAllUsers();
+        
+        const usersWithStatus = await Promise.all(
+          users.map(async (user) => {
+            try {
+              const fingerprintStatus = await this.getUserFingerprintStatus(user.id);
+              return {
+                ...user,
+                has_fingerprint: fingerprintStatus.has_fingerprint,
+                fingerprint_count: fingerprintStatus.fingerprint_count
+              };
+            } catch (error) {
+              console.error(`Error getting fingerprint status for user ${user.id}:`, error);
+              return {
+                ...user,
+                has_fingerprint: false,
+                fingerprint_count: 0
+              };
+            }
+          })
+        );
+
+        return usersWithStatus;
+      } catch (fallbackError) {
+        console.error('Fallback também falhou:', fallbackError);
+        return [];
+      }
     }
   }
 
+  /**
+   * Obtém estatísticas das fingerprints
+   */
   async getFingerprintStats(): Promise<{
     total_users: number;
     users_with_fingerprint: number;
@@ -187,14 +244,17 @@ class DatabaseService {
     fingerprint_coverage: number;
   }> {
     try {
-      const data = await this.getAllUsersFingerprintStatus();
+      const data = await this.getAllUsersWithFingerprintStatus();
+      
+      const usersWithFingerprint = data.filter(user => user.has_fingerprint).length;
+      const totalUsers = data.length;
       
       return {
-        total_users: data.total_users,
-        users_with_fingerprint: data.users_with_fingerprint,
-        users_without_fingerprint: data.users_without_fingerprint,
-        fingerprint_coverage: data.total_users > 0 
-          ? Math.round((data.users_with_fingerprint / data.total_users) * 100) 
+        total_users: totalUsers,
+        users_with_fingerprint: usersWithFingerprint,
+        users_without_fingerprint: totalUsers - usersWithFingerprint,
+        fingerprint_coverage: totalUsers > 0
+          ? Math.round((usersWithFingerprint / totalUsers) * 100)
           : 0
       };
     } catch (error) {
@@ -212,34 +272,21 @@ class DatabaseService {
 
   async uploadUserImageFile(userId: number, identificador: string, imageFile: File): Promise<ImageOperationResponse> {
     try {
-      console.log('📤 Iniciando upload - userId:', userId, 'identificador:', identificador, 'file:', imageFile.name, 'size:', imageFile.size);
-
       const formData = new FormData();
       formData.append('image', imageFile);
       formData.append('identificador', identificador);
-
-      console.log('📋 FormData criado, enviando requisição...');
 
       const response = await fetch(`${this.apiBaseUrl}/users/${userId}/image-file`, {
         method: 'PUT',
         body: formData,
       });
 
-      console.log('📡 Resposta recebida - Status:', response.status);
-
       if (!response.ok) {
-        let errorText;
-        try {
-          errorText = await response.text();
-          console.error('❌ Erro na resposta:', errorText);
-        } catch {
-          errorText = 'Não foi possível ler a resposta de erro';
-        }
+        const errorText = await response.text().catch(() => 'Não foi possível ler a resposta de erro');
         throw new Error(`HTTP error! status: ${response.status}, response: ${errorText}`);
       }
 
       const data = await response.json();
-      console.log('✅ Upload bem-sucedido:', data);
 
       return {
         success: true,
@@ -248,7 +295,7 @@ class DatabaseService {
         imageUrl: `${this.baseUrl}/${data.imagePath}`
       };
     } catch (error) {
-      console.error('💥 Upload image file error:', error);
+      console.error('Upload image file error:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Erro ao fazer upload da imagem'
@@ -314,7 +361,7 @@ class DatabaseService {
     }
   }
 
-  // ==================== FUNÇÕES AUXILIARES PARA IMAGENS (COMPATIBILIDADE) ====================
+  // ==================== FUNÇÕES AUXILIARES PARA IMAGENS ====================
 
   isValidBase64Image(base64String: string): boolean {
     if (!base64String) return false;
@@ -388,7 +435,7 @@ class DatabaseService {
     }
   }
 
-  // ==================== OPERAÇÕES COM IMAGENS (COMPATIBILIDADE) ====================
+  // ==================== OPERAÇÕES COM IMAGENS ====================
 
   async uploadUserImage(userId: number, imageBase64: string): Promise<ImageOperationResponse> {
     try {
@@ -696,7 +743,7 @@ class DatabaseService {
     }
   }
 
-  // ==================== MÉTODOS ADICIONAIS PARA WEB ====================
+  // ==================== MÉTODOS ADICIONAIS ====================
 
   async isServerOnline(): Promise<boolean> {
     try {
@@ -729,33 +776,11 @@ class DatabaseService {
 // Instância única do serviço
 export const databaseService = new DatabaseService();
 
-// ==================== NOVOS HOOKS PARA DIGITAIS ====================
+// ==================== HOOKS PARA DIGITAIS ====================
 
-export const useFingerprintStatus = () => {
-  const [data, setData] = useState<FingerprintStatusResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const fingerprintData = await databaseService.getAllUsersFingerprintStatus();
-      setData(fingerprintData);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao carregar status das digitais');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  return { data, loading, error, refetch: loadData };
-};
-
+/**
+ * Hook para estatísticas de fingerprints
+ */
 export const useFingerprintStats = () => {
   const [stats, setStats] = useState<{
     total_users: number;
@@ -789,11 +814,9 @@ export const useFingerprintStats = () => {
 /**
  * Hook para status de digital de um usuário específico
  */
-export const useUserFingerprintStatus = (userId: string) => {
+export const useUserFingerprintStatus = (userId: number) => {
   const [data, setData] = useState<{
-    user_id: string;
     has_fingerprint: boolean;
-    fingerprints: FingerprintData[];
     fingerprint_count: number;
   } | null>(null);
   const [loading, setLoading] = useState(true);
