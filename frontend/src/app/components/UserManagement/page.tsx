@@ -232,7 +232,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
                       </div>
                     </div>
 
-                    <div className="mr-4">
+                    <div className="mr-6">
                       {getFingerprintIcon(user)}
                     </div>
                     
