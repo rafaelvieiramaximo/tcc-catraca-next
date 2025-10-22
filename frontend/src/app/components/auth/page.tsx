@@ -55,7 +55,9 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
       const user = await databaseService.authenticateUser(identificador, senha, tipo);
 
       if (user && user.tipo === tipo) {
-        onLoginSuccess(user);
+        setTimeout(() => {
+          onLoginSuccess(user);
+        }, 1000);
         setIsLoginSuccessful(true);
       } else {
         setError("Identificador ou senha incorretos.");
@@ -196,8 +198,28 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
           )}
 
           {isLoginSuccessful && (
-            <div className="success-message">
-              Login realizado com sucesso!
+            <div
+              className="success-message"
+              role="status"
+              aria-live="polite"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                backgroundColor: '#e6f9ec',
+                color: '#0b6b2d',
+                padding: '0.6rem 1rem',
+                borderRadius: '8px',
+                fontWeight: 600,
+                textAlign: 'center',
+                width: '100%',
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <path d="M20 6L9 17l-5-5" stroke="#0b6b2d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <span>Login realizado com sucesso!</span>
             </div>
           )}
 
