@@ -91,6 +91,12 @@ interface ImageOperationResponse {
   imageUrl?: string;
 }
 
+export interface NovoSistemaUsuario {
+  nome: string;
+  tipo: 'ADMIN' | 'RH' | 'PORTARIA';
+  identificador: string;
+  senha: string;
+}
 // ==================== NOVOS TIPOS PARA DIGITAIS ====================
 
 export interface FingerprintData {
@@ -149,7 +155,7 @@ class DatabaseService {
     }
   }
 
-   async connectionTest(): Promise<boolean> {
+  async connectionTest(): Promise<boolean> {
     try {
       const res = await fetch(`${this.apiBaseUrl}/health`, { method: 'GET' });
       if (!res.ok) return false;
@@ -161,10 +167,10 @@ class DatabaseService {
     }
   }
 
-    async isServerOnline(): Promise<boolean> {
-      const res = await this.healthCheck();
-      return res.success == true;
-    }
+  async isServerOnline(): Promise<boolean> {
+    const res = await this.healthCheck();
+    return res.success == true;
+  }
   // ==================== NOVAS FUNÇÕES PARA VERIFICAÇÃO DE DIGITAIS ====================
 
   async getUserFingerprintStatus(userId: number): Promise<{ has_fingerprint: boolean; fingerprint_count: number }> {
@@ -190,7 +196,7 @@ class DatabaseService {
   async getAllUsersWithFingerprintStatus(): Promise<UsuarioCompleto[]> {
     try {
       const response = await this.makeRequest('/users/fingerprints/status');
-      
+
       if (!response.success) {
         throw new Error(response.error || 'Erro ao buscar status das digitais');
       }
@@ -213,12 +219,12 @@ class DatabaseService {
       return usersWithStatus;
     } catch (error) {
       console.error('Get all users with fingerprint status error:', error);
-      
+
       // Fallback: busca usuários normalmente e depois verifica fingerprint individualmente
       try {
         console.log('🔄 Usando fallback para busca de fingerprints...');
         const users = await this.getAllUsers();
-        
+
         const usersWithStatus = await Promise.all(
           users.map(async (user) => {
             try {
@@ -258,10 +264,10 @@ class DatabaseService {
   }> {
     try {
       const data = await this.getAllUsersWithFingerprintStatus();
-      
+
       const usersWithFingerprint = data.filter(user => user.has_fingerprint).length;
       const totalUsers = data.length;
-      
+
       return {
         total_users: totalUsers,
         users_with_fingerprint: usersWithFingerprint,
@@ -646,6 +652,26 @@ class DatabaseService {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Erro ao criar usuário'
+      };
+    }
+  }
+
+  async createSystemUser(userData: NovoSistemaUsuario): Promise<{ success: boolean; userId?: number; error?: string }> {
+    try {
+      const response = await this.makeRequest('/users/system', {
+        method: 'POST',
+        body: JSON.stringify(userData),
+      });
+
+      return {
+        success: true,
+        userId: response.userId
+      };
+    } catch (error) {
+      console.error('Create system user error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao criar usuário do sistema'
       };
     }
   }

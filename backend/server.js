@@ -255,48 +255,6 @@ app.post('/api/auth/login', async (req, res) => {
 
 // ==================== USUÁRIOS ====================
 
-app.get('/api/users', async (req, res) => {
-  try {
-    const query = `
-      SELECT 
-        id, 
-        nome, 
-        tipo, 
-        identificador, 
-        created_at, 
-        updated_at,
-        imagem_path,
-        CASE 
-          WHEN imagem_path IS NOT NULL THEN true
-          ELSE false 
-        END as tem_imagem
-      FROM usuario 
-      WHERE tipo != 'ADMIN' AND tipo != 'PORTARIA' AND tipo != 'RH'
-      ORDER BY id
-    `;
-    const result = await pool.query(query);
-
-    const usersWithImages = result.rows.map(user => {
-      if (user.imagem_path) {
-        user.imagem_url = `http://localhost:${port}/${user.imagem_path}`;
-      }
-      return user;
-    });
-
-    res.json({
-      success: true,
-      users: usersWithImages
-    });
-
-  } catch (error) {
-    console.error('Get users error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Erro ao buscar usuários'
-    });
-  }
-});
-
 app.get('/api/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -512,6 +470,173 @@ app.delete('/api/users/:id', async (req, res) => {
   }
 });
 
+// ==================== ENDPOINTS FINGER ====================
+
+app.get('/api/users/:id/finger', async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const query = `
+      SELECT 
+        user_id,
+        template_position
+      FROM user_finger 
+      WHERE user_id = $1
+      ORDER BY template_position
+    `;
+
+    const result = await pool.query(query, [userId]);
+
+    if (result.rows.length === 0) {
+      return res.json({
+        user_id: userId,
+        has_fingerprint: false,
+        fingerprints: [],
+        fingerprint_count: 0
+      });
+    }
+
+    res.json({
+      user_id: userId,
+      has_fingerprint: true,
+      fingerprints: result.rows,
+      fingerprint_count: result.rows.length
+    });
+
+  } catch (error) {
+    console.error('Error fetching finger data:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      details: error.message
+    });
+  }
+});
+
+app.get('/api/users/fingerprints/status', async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        u.id as user_id,
+        u.nome,
+        u.tipo,
+        u.identificador,
+        u.imagem_path,
+        COUNT(uf.template_position) as fingerprint_count,
+        CASE 
+          WHEN COUNT(uf.template_position) > 0 THEN true 
+          ELSE false 
+        END as has_fingerprint,
+        ARRAY_AGG(uf.template_position) as fingerprint_positions
+      FROM usuario u
+      LEFT JOIN user_finger uf ON u.id = uf.user_id
+      GROUP BY u.id, u.nome, u.tipo, u.identificador, u.imagem_path
+      ORDER BY u.nome
+    `;
+
+    const result = await pool.query(query);
+
+    res.json({
+      success: true,
+      users: result.rows,
+      total_users: result.rows.length,
+      users_with_fingerprint: result.rows.filter(user => user.has_fingerprint).length,
+      users_without_fingerprint: result.rows.filter(user => !user.has_fingerprint).length
+    });
+
+  } catch (error) {
+    console.error('Error fetching fingerprints status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      details: error.message
+    });
+  }
+});
+
+app.post('/api/users/system', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { nome, tipo, identificador, senha } = req.body;
+
+    if (!nome || !tipo || !identificador || !senha) {
+      return res.status(400).json({ error: 'Todos os campos são obrigatórios' });
+    }
+
+    if (!['ADMIN', 'PORTARIA', 'RH'].includes(tipo)) {
+      return res.status(400).json({ error: 'Tipo de usuário do sistema inválido' });
+    }
+
+    console.log(`👤 Criando usuário do sistema: ${nome} (${tipo} - ${identificador})`);
+
+    // 1. Criar usuário na tabela usuario
+    const { rows } = await client.query(
+      'INSERT INTO usuario (nome, tipo, identificador) VALUES ($1, $2, $3) RETURNING id',
+      [nome, tipo, identificador]
+    );
+    const userId = rows[0].id;
+
+    console.log(`✅ Usuário base criado com ID: ${userId}`);
+
+    // 2. Criar registro na tabela específica com senha criptografada
+    if (tipo === 'ADMIN') {
+      await client.query(
+        'INSERT INTO admin (usuario_id, id_admin, senha) VALUES ($1, $2, crypt($3, gen_salt(\'bf\')))',
+        [userId, identificador, senha]
+      );
+    } else if (tipo === 'PORTARIA') {
+      await client.query(
+        'INSERT INTO portaria (usuario_id, matricula, senha) VALUES ($1, $2, crypt($3, gen_salt(\'bf\')))',
+        [userId, identificador, senha]
+      );
+    } else if (tipo === 'RH') {
+      await client.query(
+        'INSERT INTO rh (usuario_id, matricula, senha) VALUES ($1, $2, crypt($3, gen_salt(\'bf\')))',
+        [userId, identificador, senha]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    // 3. Registrar log
+    await client.query(
+      `INSERT INTO log (id_usuario, identificador, acao, status, detalhes, nome_usuario)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [userId, identificador, 'CRIAR_USUARIO_SISTEMA', 'SUCESSO',
+        `Usuário do sistema ${tipo} criado`, nome]
+    );
+
+    console.log(`🎉 Usuário do sistema criado com sucesso! ID: ${userId}`);
+
+    res.status(201).json({
+      success: true,
+      userId,
+      message: 'Usuário do sistema criado com sucesso'
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('❌ Erro ao criar usuário do sistema:', error);
+
+    // Registrar log de erro
+    await pool.query(
+      `INSERT INTO log (identificador, acao, status, detalhes, nome_usuario)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [req.body.identificador, 'CRIAR_USUARIO_SISTEMA', 'ERRO',
+      `Falha: ${error.message}`, req.body.nome]
+    );
+
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'Identificador já cadastrado' });
+    }
+
+    res.status(500).json({ error: `Erro ao criar usuário: ${error.message}` });
+  } finally {
+    client.release();
+  }
+});
+
 // ==================== LOG AÇÃO ====================
 
 app.get('/api/logs/action', async (req, res) => {
@@ -669,89 +794,7 @@ app.get('/api/logs/entrada', async (req, res) => {
   }
 });
 
-// ==================== ENDPOINTS FINGER ====================
 
-app.get('/api/users/:id/finger', async (req, res) => {
-  try {
-    const userId = req.params.id;
-
-    const query = `
-      SELECT 
-        user_id,
-        template_position
-      FROM user_finger 
-      WHERE user_id = $1
-      ORDER BY template_position
-    `;
-
-    const result = await pool.query(query, [userId]);
-
-    if (result.rows.length === 0) {
-      return res.json({
-        user_id: userId,
-        has_fingerprint: false,
-        fingerprints: [],
-        fingerprint_count: 0
-      });
-    }
-
-    res.json({
-      user_id: userId,
-      has_fingerprint: true,
-      fingerprints: result.rows,
-      fingerprint_count: result.rows.length
-    });
-
-  } catch (error) {
-    console.error('Error fetching finger data:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      details: error.message
-    });
-  }
-});
-
-app.get('/api/users/fingerprints/status', async (req, res) => {
-  try {
-    const query = `
-      SELECT 
-        u.id as user_id,
-        u.nome,
-        u.tipo,
-        u.identificador,
-        u.imagem_path,
-        COUNT(uf.template_position) as fingerprint_count,
-        CASE 
-          WHEN COUNT(uf.template_position) > 0 THEN true 
-          ELSE false 
-        END as has_fingerprint,
-        ARRAY_AGG(uf.template_position) as fingerprint_positions
-      FROM usuario u
-      LEFT JOIN user_finger uf ON u.id = uf.user_id
-      WHERE u.tipo != 'ADMIN' AND u.tipo != 'PORTARIA' AND u.tipo != 'RH'
-      GROUP BY u.id, u.nome, u.tipo, u.identificador, u.imagem_path
-      ORDER BY u.nome
-    `;
-
-    const result = await pool.query(query);
-
-    res.json({
-      success: true,
-      users: result.rows,
-      total_users: result.rows.length,
-      users_with_fingerprint: result.rows.filter(user => user.has_fingerprint).length,
-      users_without_fingerprint: result.rows.filter(user => !user.has_fingerprint).length
-    });
-
-  } catch (error) {
-    console.error('Error fetching fingerprints status:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-      details: error.message
-    });
-  }
-});
 // ==================== ENDPOINTS CATRACA ====================
 
 const CATRACA_API_URL = 'http://192.168.11.220:5000';

@@ -5,6 +5,7 @@ import { databaseService, UsuarioCompleto } from "../../services/database-servic
 import Header from "../Header";
 import MenuNavigation from "../MenuNavigation";
 import AddUserModal from "./modalAddUser";
+import SystemUserModal from "./systemUserModal";
 
 interface UserManagementProps {
   onLogout?: () => void;
@@ -19,6 +20,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
   const [showAddModal, setShowAddModal] = useState(false);
   const [editUser, setEditUser] = useState<UsuarioCompleto | null>(null);
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
+  const [showSystemUserModal, setShowSystemUserModal] = useState(false);
 
   useEffect(() => {
     loadUsers();
@@ -28,8 +30,17 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
     try {
       setLoading(true);
       const usersData = await databaseService.getAllUsersWithFingerprintStatus();
-      setUsers(usersData);
-      setFilteredUsers(usersData);
+      
+      // ✅ FILTRAGEM POR PERFIL NO FRONTEND
+      let usuariosFiltrados = usersData;
+      if (user?.tipo === 'RH' || user?.tipo === 'PORTARIA') {
+        usuariosFiltrados = usersData.filter(u => 
+          u.tipo === 'ESTUDANTE' || u.tipo === 'FUNCIONARIO'
+        );
+      }
+      
+      setUsers(usuariosFiltrados);
+      setFilteredUsers(usuariosFiltrados);
     } catch (error) {
       console.error("Erro ao carregar usuários:", error);
       alert("Não foi possível carregar a lista de usuários.");
@@ -157,7 +168,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
 
   return (
     <div className="min-h-screen bg-gray-50 relative">
-      <div className={showAddModal ? 'blur-xs' : ''}>
+      <div className={showAddModal || showSystemUserModal ? 'blur-xs' : ''}>
         <Header onLogout={handleLogout} pageName="Gerenciador de Usuários" user={user} />
         {user?.tipo === 'ADMIN' && (
           <MenuNavigation currentPath="/usermanage" />
@@ -192,22 +203,22 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
               </div>
             ) : (
               <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-                {filteredUsers.map((user) => (
-                  <div key={user.id} className="bg-gray-50 rounded-lg p-4 mb-3 flex items-center justify-between border border-gray-200 shadow-sm">
+                {filteredUsers.map((userItem) => (
+                  <div key={userItem.id} className="bg-gray-50 rounded-lg p-4 mb-3 flex items-center justify-between border border-gray-200 shadow-sm">
                     <div className="flex items-center flex-1">
 
                       {/* Foto do usuário */}
                       <div className="mr-4">
-                        {user.imagem_url ? (
+                        {userItem.imagem_url ? (
                           <img
-                            src={user.imagem_url}
-                            alt={user.nome}
+                            src={userItem.imagem_url}
+                            alt={userItem.nome}
                             className="w-12 h-12 rounded-full object-cover"
                           />
                         ) : (
                           <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">
                             <span className="text-sm text-gray-500 font-medium">
-                              {user.nome.charAt(0).toUpperCase()}
+                              {userItem.nome.charAt(0).toUpperCase()}
                             </span>
                           </div>
                         )}
@@ -217,40 +228,42 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
                       <div className="flex flex-1 gap-6">
                         <div className="flex-1">
                           <div className="text-xs font-semibold text-gray-600 mb-1">Identificador</div>
-                          <div className="text-sm text-gray-800 font-medium">{user.identificador}</div>
+                          <div className="text-sm text-gray-800 font-medium">{userItem.identificador}</div>
                         </div>
 
                         <div className="flex-1">
                           <div className="text-xs font-semibold text-gray-600 mb-1">Nome</div>
-                          <div className="text-sm text-gray-800 font-medium">{user.nome}</div>
+                          <div className="text-sm text-gray-800 font-medium">{userItem.nome}</div>
                         </div>
 
                         <div className="flex-1">
                           <div className="text-xs font-semibold text-gray-600 mb-1">Tipo</div>
-                          <div className="text-sm text-gray-800 font-medium">{user.tipo}</div>
+                          <div className="text-sm text-gray-800 font-medium">{userItem.tipo}</div>
                         </div>
                       </div>
                     </div>
 
                     <div className="mr-6">
-                      {getFingerprintIcon(user)}
+                      {getFingerprintIcon(userItem)}
                     </div>
-                    
+
                     <div className="flex items-center gap-2">
                       <button
                         className="w-9 h-9 flex items-center justify-center rounded-md hover:bg-gray-100 transition-colors"
-                        onClick={() => handleEditUser(user.id)}
+                        onClick={() => handleEditUser(userItem.id)}
                         title="Editar usuário"
+                        disabled={userItem.tipo === 'ADMIN' || userItem.tipo === 'RH' || userItem.tipo === 'PORTARIA'}
                       >
-                        <span className="text-base">✏️</span>
+                        <span className={`text-base ${userItem.tipo === 'ADMIN' || userItem.tipo === 'RH' || userItem.tipo === 'PORTARIA' ? 'text-gray-400' : ''}`}>✏️</span>
                       </button>
 
                       <button
                         className="w-9 h-9 flex items-center justify-center rounded-md hover:bg-gray-100 transition-colors"
-                        onClick={() => handleDeleteUser(user.id, user.nome)}
+                        onClick={() => handleDeleteUser(userItem.id, userItem.nome)}
                         title="Excluir usuário"
+                        disabled={userItem.tipo === 'ADMIN' || userItem.tipo === 'RH' || userItem.tipo === 'PORTARIA'}
                       >
-                        <span className="text-base">❌</span>
+                        <span className={`text-base ${userItem.tipo === 'ADMIN' || userItem.tipo === 'RH' || userItem.tipo === 'PORTARIA' ? 'text-gray-400' : ''}`}>❌</span>
                       </button>
                     </div>
                   </div>
@@ -259,13 +272,15 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
             )}
           </div>
 
-          {/* Botão Adicionar Usuário */}
-          <button
-            className="fixed bottom-5 right-5 bg-black rounded-full w-15 h-15 flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow"
-            onClick={handleAddUser}
-          >
-            <span className="text-2xl text-white font-bold">+</span>
-          </button>
+          {/* Botão Adicionar Usuário - Mostrar apenas se usuário tem permissão */}
+          {(user?.tipo === 'ADMIN' || user?.tipo === 'RH') && (
+            <button
+              className="fixed bottom-5 right-5 bg-black rounded-full w-15 h-15 flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow"
+              onClick={handleAddUser}
+            >
+              <span className="text-2xl text-white font-bold">+</span>
+            </button>
+          )}
         </div>
 
         {/* Notificação de sucesso */}
@@ -278,15 +293,28 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
         )}
       </div>
 
-      {/* Modal de Adicionar/Editar Usuário */}
+      {/* Modal de Usuários do Sistema */}
+      <SystemUserModal
+        visible={showSystemUserModal}
+        onClose={() => setShowSystemUserModal(false)}
+        onUserAdded={handleUserAdded}
+      />
+
+      {/* Modal de Adicionar/Editar Usuário Normal */}
       <AddUserModal
         visible={showAddModal}
         onClose={() => {
           setEditUser(null);
           setShowAddModal(false);
+          // ✅ CORREÇÃO: Removido setShowSystemUserModal(true) automático
         }}
         onUserAdded={handleUserAdded}
         userToEdit={editUser}
+        user={user}
+        onOpenSystemModal={() => {
+          setShowAddModal(false);
+          setShowSystemUserModal(true);
+        }}
       />
     </div>
   );

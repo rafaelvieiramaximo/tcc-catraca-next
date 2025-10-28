@@ -1,4 +1,3 @@
-// app/components/UserManagement/modalAddUser.tsx
 'use client';
 
 import React, { useEffect, useState, useRef } from "react";
@@ -9,6 +8,8 @@ interface AddUserModalProps {
     onClose: () => void;
     onUserAdded: () => void;
     userToEdit: UsuarioCompleto | null;
+    user: UsuarioCompleto | null;
+    onOpenSystemModal?: () => void;
 }
 
 export default function AddUserModal({
@@ -16,6 +17,8 @@ export default function AddUserModal({
     onClose,
     onUserAdded,
     userToEdit,
+    user,
+    onOpenSystemModal
 }: AddUserModalProps) {
     const [formData, setFormData] = useState({
         tipo: userToEdit?.tipo || ("ESTUDANTE" as TipoS),
@@ -32,9 +35,8 @@ export default function AddUserModal({
     const [catracaStatus, setCatracaStatus] = useState<'online' | 'offline' | 'checking'>('checking');
     const [biometriaMensagem, setBiometriaMensagem] = useState<string>('');
     const [cadastrandoBiometria, setCadastrandoBiometria] = useState(false);
-    
-    // NOVO ESTADO: Controla se o usuário já foi criado (apenas para novo usuário)
-    const [usuarioCriado, setUsuarioCriado] = useState<{id: number, nome: string, identificador: string} | null>(null);
+
+    const [usuarioCriado, setUsuarioCriado] = useState<{ id: number, nome: string, identificador: string } | null>(null);
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -406,7 +408,7 @@ export default function AddUserModal({
                     });
 
                     setBiometriaMensagem('✅ Usuário criado com sucesso! Agora cadastre a biometria.');
-                    
+
                     await databaseService.createActionLog({
                         id_usuario: result.userId,
                         identificador: formData.identificador.trim(),
@@ -480,7 +482,6 @@ export default function AddUserModal({
         setUsuarioCriado(null);
         onClose();
     };
-
     const handleCloseWithoutBiometry = () => {
         setUsuarioCriado(null);
         onUserAdded();
@@ -497,8 +498,8 @@ export default function AddUserModal({
                 {/* Header */}
                 <div className="flex justify-between items-center p-5 border-b border-gray-200 bg-white">
                     <div className="text-lg font-bold text-gray-800">
-                        {userToEdit ? "Editar Usuário" : 
-                         usuarioCriado ? "Cadastrar Biometria" : "Cadastro de Usuário"}
+                        {userToEdit ? "Editar Usuário" :
+                            usuarioCriado ? "Cadastrar Biometria" : "Cadastro de Usuário"}
                     </div>
                     <button
                         className="w-7 h-7 flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
@@ -512,13 +513,12 @@ export default function AddUserModal({
                     <div className="mb-4 p-3 bg-gray-50 rounded-lg border">
                         <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
-                                <div className={`w-3 h-3 rounded-full ${
-                                    catracaStatus === 'online' ? 'bg-green-500' :
+                                <div className={`w-3 h-3 rounded-full ${catracaStatus === 'online' ? 'bg-green-500' :
                                     catracaStatus === 'checking' ? 'bg-yellow-500' : 'bg-red-500'
-                                }`} />
+                                    }`} />
                                 <span className="text-sm font-medium">
                                     Catraca: {catracaStatus === 'online' ? 'Online' :
-                                            catracaStatus === 'checking' ? 'Verificando...' : 'Offline'}
+                                        catracaStatus === 'checking' ? 'Verificando...' : 'Offline'}
                                 </span>
                             </div>
                             <button
@@ -531,12 +531,11 @@ export default function AddUserModal({
                         </div>
 
                         {biometriaMensagem && (
-                            <div className={`text-sm p-2 rounded mt-2 ${
-                                biometriaMensagem.includes('❌') ? 'bg-red-100 text-red-700 border border-red-200' :
+                            <div className={`text-sm p-2 rounded mt-2 ${biometriaMensagem.includes('❌') ? 'bg-red-100 text-red-700 border border-red-200' :
                                 biometriaMensagem.includes('✅') ? 'bg-green-100 text-green-700 border border-green-200' :
-                                biometriaMensagem.includes('🔄') ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-                                'bg-gray-100 text-gray-700 border border-gray-200'
-                            }`}>
+                                    biometriaMensagem.includes('🔄') ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                                        'bg-gray-100 text-gray-700 border border-gray-200'
+                                }`}>
                                 {biometriaMensagem}
                             </div>
                         )}
@@ -587,33 +586,30 @@ export default function AddUserModal({
                                     />
                                     <div className="flex justify-center gap-2">
                                         <button
-                                            className={`px-4 py-2 rounded-md text-sm font-medium ${
-                                                camposBloqueados 
-                                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                                                    : 'bg-blue-500 text-white hover:bg-blue-600'
-                                            }`}
+                                            className={`px-4 py-2 rounded-md text-sm font-medium ${camposBloqueados
+                                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                : 'bg-blue-500 text-white hover:bg-blue-600'
+                                                }`}
                                             onClick={handleSelectImage}
                                             disabled={camposBloqueados}
                                         >
                                             Galeria
                                         </button>
                                         <button
-                                            className={`px-4 py-2 rounded-md text-sm font-medium ${
-                                                camposBloqueados 
-                                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                                                    : 'bg-green-500 text-white hover:bg-green-600'
-                                            }`}
+                                            className={`px-4 py-2 rounded-md text-sm font-medium ${camposBloqueados
+                                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                : 'bg-green-500 text-white hover:bg-green-600'
+                                                }`}
                                             onClick={startCamera}
                                             disabled={camposBloqueados}
                                         >
                                             Câmera
                                         </button>
                                         <button
-                                            className={`px-4 py-2 rounded-md text-sm font-medium ${
-                                                camposBloqueados 
-                                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                                                    : 'bg-red-500 text-white hover:bg-red-600'
-                                            }`}
+                                            className={`px-4 py-2 rounded-md text-sm font-medium ${camposBloqueados
+                                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                : 'bg-red-500 text-white hover:bg-red-600'
+                                                }`}
                                             onClick={handleRemoveImage}
                                             disabled={camposBloqueados}
                                         >
@@ -623,38 +619,33 @@ export default function AddUserModal({
                                 </div>
                             ) : (
                                 <div className="text-center">
-                                    <div className={`w-32 h-32 rounded-full border-2 border-dashed flex flex-col items-center justify-center p-4 mb-4 mx-auto transition-colors ${
-                                        camposBloqueados 
-                                            ? 'bg-gray-100 border-gray-300' 
-                                            : 'bg-gray-50 border-gray-300 hover:border-blue-400'
-                                    }`}>
-                                        <div className={`text-2xl mb-2 ${
-                                            camposBloqueados ? 'text-gray-400' : 'text-gray-400'
-                                        }`}>📷</div>
-                                        <div className={`text-xs text-center ${
-                                            camposBloqueados ? 'text-gray-500' : 'text-gray-500'
+                                    <div className={`w-32 h-32 rounded-full border-2 border-dashed flex flex-col items-center justify-center p-4 mb-4 mx-auto transition-colors ${camposBloqueados
+                                        ? 'bg-gray-100 border-gray-300'
+                                        : 'bg-gray-50 border-gray-300 hover:border-blue-400'
                                         }`}>
+                                        <div className={`text-2xl mb-2 ${camposBloqueados ? 'text-gray-400' : 'text-gray-400'
+                                            }`}>📷</div>
+                                        <div className={`text-xs text-center ${camposBloqueados ? 'text-gray-500' : 'text-gray-500'
+                                            }`}>
                                             {camposBloqueados ? 'Foto cadastrada' : 'Selecione uma opção'}
                                         </div>
                                     </div>
                                     <div className="flex justify-center gap-3">
                                         <button
-                                            className={`px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${
-                                                camposBloqueados 
-                                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                                                    : 'bg-blue-500 text-white hover:bg-blue-600'
-                                            }`}
+                                            className={`px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${camposBloqueados
+                                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                : 'bg-blue-500 text-white hover:bg-blue-600'
+                                                }`}
                                             onClick={handleSelectImage}
                                             disabled={camposBloqueados}
                                         >
                                             📁 Galeria
                                         </button>
                                         <button
-                                            className={`px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${
-                                                camposBloqueados 
-                                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                                                    : 'bg-green-500 text-white hover:bg-green-600'
-                                            }`}
+                                            className={`px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${camposBloqueados
+                                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                : 'bg-green-500 text-white hover:bg-green-600'
+                                                }`}
                                             onClick={startCamera}
                                             disabled={camposBloqueados}
                                         >
@@ -672,30 +663,28 @@ export default function AddUserModal({
                         <div className="flex flex-col">
                             <div className="flex justify-between gap-2">
                                 <button
-                                    className={`flex-1 py-3 rounded-lg border text-sm font-medium transition-colors ${
-                                        formData.tipo === "ESTUDANTE"
-                                            ? camposBloqueados
-                                                ? "bg-gray-400 border-gray-400 text-white cursor-not-allowed"
-                                                : "bg-[#4A90A4] border-[#4A90A4] text-white"
-                                            : camposBloqueados
-                                                ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
-                                                : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
-                                    }`}
+                                    className={`flex-1 py-3 rounded-lg border text-sm font-medium transition-colors ${formData.tipo === "ESTUDANTE"
+                                        ? camposBloqueados
+                                            ? "bg-gray-400 border-gray-400 text-white cursor-not-allowed"
+                                            : "bg-[#4A90A4] border-[#4A90A4] text-white"
+                                        : camposBloqueados
+                                            ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
+                                            : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
+                                        }`}
                                     onClick={() => !camposBloqueados && setFormData(prev => ({ ...prev, tipo: "ESTUDANTE" }))}
                                     disabled={camposBloqueados}
                                 >
                                     Estudante
                                 </button>
                                 <button
-                                    className={`flex-1 py-3 rounded-lg border text-sm font-medium transition-colors ${
-                                        formData.tipo === "FUNCIONARIO"
-                                            ? camposBloqueados
-                                                ? "bg-gray-400 border-gray-400 text-white cursor-not-allowed"
-                                                : "bg-[#4A90A4] border-[#4A90A4] text-white"
-                                            : camposBloqueados
-                                                ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
-                                                : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
-                                    }`}
+                                    className={`flex-1 py-3 rounded-lg border text-sm font-medium transition-colors ${formData.tipo === "FUNCIONARIO"
+                                        ? camposBloqueados
+                                            ? "bg-gray-400 border-gray-400 text-white cursor-not-allowed"
+                                            : "bg-[#4A90A4] border-[#4A90A4] text-white"
+                                        : camposBloqueados
+                                            ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
+                                            : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
+                                        }`}
                                     onClick={() => !camposBloqueados && setFormData(prev => ({ ...prev, tipo: "FUNCIONARIO" }))}
                                     disabled={camposBloqueados}
                                 >
@@ -710,13 +699,12 @@ export default function AddUserModal({
                         <div className="text-sm font-semibold text-gray-800 mb-2">Nome</div>
                         <input
                             type="text"
-                            className={`w-full rounded-lg border p-3 text-base outline-none focus:ring-2 focus:ring-opacity-20 ${
-                                camposBloqueados
-                                    ? "bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed"
-                                    : "bg-gray-50 border-gray-200 text-gray-800 focus:border-[#4A90A4] focus:ring-[#4A90A4]"
-                            }`}
+                            className={`w-full rounded-lg border p-3 text-base outline-none focus:ring-2 focus:ring-opacity-20 ${camposBloqueados
+                                ? "bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed"
+                                : "bg-gray-50 border-gray-200 text-gray-800 focus:border-[#4A90A4] focus:ring-[#4A90A4]"
+                                }`}
                             value={formData.nome}
-                            onChange = {(e) => {
+                            onChange={(e) => {
                                 setFormData(prev => ({ ...prev, nome: e.target.value }));
                                 const value = e.target.value.replace(/[^a-zA-ZÀ-ÿ\s]/g, '');
                                 setFormData(prev => ({ ...prev, nome: value }));
@@ -733,11 +721,10 @@ export default function AddUserModal({
                         </div>
                         <input
                             type="text"
-                            className={`w-full rounded-lg border p-3 text-base outline-none focus:ring-2 focus:ring-opacity-20 ${
-                                camposBloqueados
-                                    ? "bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed"
-                                    : "bg-gray-50 border-gray-200 text-gray-800 focus:border-[#4A90A4] focus:ring-[#4A90A4]"
-                            }`}
+                            className={`w-full rounded-lg border p-3 text-base outline-none focus:ring-2 focus:ring-opacity-20 ${camposBloqueados
+                                ? "bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed"
+                                : "bg-gray-50 border-gray-200 text-gray-800 focus:border-[#4A90A4] focus:ring-[#4A90A4]"
+                                }`}
                             value={formData.identificador}
                             onChange={(e) => {
                                 if (camposBloqueados) return;
@@ -749,8 +736,8 @@ export default function AddUserModal({
                             disabled={camposBloqueados}
                         />
                         <p className="text-xs text-gray-500 mt-1">
-                            {formData.tipo === "FUNCIONARIO" 
-                                ? "5 dígitos numéricos" 
+                            {formData.tipo === "FUNCIONARIO"
+                                ? "5 dígitos numéricos"
                                 : "13 dígitos numéricos"
                             }
                         </p>
@@ -761,11 +748,10 @@ export default function AddUserModal({
                             <button
                                 onClick={iniciarCadastroBiometria}
                                 disabled={cadastrandoBiometria || loading || catracaStatus !== 'online' || !formData.identificador}
-                                className={`w-full py-3 rounded-lg border text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-                                    (cadastrandoBiometria || loading || catracaStatus !== 'online' || !formData.identificador)
-                                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                        : 'bg-green-500 text-white hover:bg-green-600'
-                                }`}
+                                className={`w-full py-3 rounded-lg border text-sm font-medium transition-colors flex items-center justify-center gap-2 ${(cadastrandoBiometria || loading || catracaStatus !== 'online' || !formData.identificador)
+                                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                    : 'bg-green-500 text-white hover:bg-green-600'
+                                    }`}
                             >
                                 {cadastrandoBiometria ? (
                                     <>
@@ -794,9 +780,8 @@ export default function AddUserModal({
                     <div className="space-y-3">
                         {!usuarioCriado && (
                             <button
-                                className={`w-full rounded-full py-4 text-base font-bold text-white transition-colors flex items-center justify-center ${
-                                    loading ? "bg-gray-400 cursor-not-allowed" : "bg-[#4A90A4] hover:bg-[#3a7a8a]"
-                                }`}
+                                className={`w-full rounded-full py-4 text-base font-bold text-white transition-colors flex items-center justify-center ${loading ? "bg-gray-400 cursor-not-allowed" : "bg-[#4A90A4] hover:bg-[#3a7a8a]"
+                                    }`}
                                 onClick={handleSubmit}
                                 disabled={loading}
                             >
@@ -819,9 +804,30 @@ export default function AddUserModal({
                                 Fechar sem Cadastrar Biometria
                             </button>
                         )}
+                        {user?.tipo === 'ADMIN' && !userToEdit && !usuarioCriado && (
+                            <div className="mt-6 pt-4 border-t border-gray-200">
+                                <div className="text-center mb-3">
+                                    <div className="text-sm font-medium text-gray-600">Acesso Administrativo</div>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        onClose();
+                                        onOpenSystemModal?.();
+                                    }}
+                                    className="w-full py-3 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-lg hover:from-purple-600 hover:to-indigo-700 transition-all duration-200 text-sm font-medium flex items-center justify-center gap-2 shadow-md"
+                                >
+                                    <span className="text-lg">🔐</span>
+                                    Adicionar Usuário do Sistema
+                                </button>
+                                <p className="text-xs text-gray-500 mt-2 text-center">
+                                    Para administradores, RH e portaria
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
         </div>
+
     );
 }
