@@ -310,9 +310,11 @@ app.post('/api/users', async (req, res) => {
       return res.status(400).json({ error: 'Dados obrigatórios não fornecidos' });
     }
 
-    if (!['ESTUDANTE', 'FUNCIONARIO'].includes(tipo)) {
+    if (!['ESTUDANTE', 'FUNCIONARIO', 'VISITANTE'].includes(tipo)) {
       return res.status(400).json({ error: 'Tipo inválido para esta rota' });
     }
+
+    console.log(`👤 Criando usuário: ${nome} (${tipo} - ${identificador})`);
 
     const { rows } = await client.query(
       'INSERT INTO usuario (nome, tipo, identificador) VALUES ($1, $2, $3) RETURNING id',
@@ -320,23 +322,31 @@ app.post('/api/users', async (req, res) => {
     );
     const userId = rows[0].id;
 
-    if (tipo === 'ESTUDANTE') {
-      await client.query(
-        'INSERT INTO estudante (usuario_id, ra) VALUES ($1, $2)',
-        [userId, identificador]
-      );
-    } else if (tipo === 'FUNCIONARIO') {
-      await client.query(
-        'INSERT INTO funcionario (usuario_id, matricula) VALUES ($1, $2)',
-        [userId, identificador]
-      );
-    }
+    console.log(`✅ Usuário base criado com ID: ${userId}`);
 
     await client.query('COMMIT');
+
+    await client.query(
+      `INSERT INTO log (id_usuario, identificador, acao, status, detalhes, nome_usuario)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [userId, identificador, 'CRIAR_USUARIO', 'SUCESSO',
+        `Usuário ${tipo} criado`, nome]
+    );
+
+    console.log(`🎉 Usuário criado com sucesso! ID: ${userId}`);
+
     return res.status(201).json({ success: true, userId });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Create user error:', err);
+    
+    await pool.query(
+      `INSERT INTO log (identificador, acao, status, detalhes, nome_usuario)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [req.body.identificador, 'CRIAR_USUARIO', 'ERRO',
+      `Falha: ${err.message}`, req.body.nome]
+    );
+
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Identificador já cadastrado' });
     }

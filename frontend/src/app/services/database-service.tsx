@@ -7,7 +7,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3
 
 // Tipos para os usuários do sistema
 export type TipoUsuario = 'PORTARIA' | 'ADMIN' | 'RH';
-export type TipoS = 'ESTUDANTE' | 'FUNCIONARIO';
+export type TipoS = 'ESTUDANTE' | 'FUNCIONARIO' | 'VISITANTE';
 
 export interface Usuario {
   id: number;
