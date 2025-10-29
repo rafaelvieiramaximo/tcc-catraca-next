@@ -542,7 +542,27 @@ export default function AddUserModal({
                     </div>
 
                     <div className="mb-5">
-                        <div className="text-base font-semibold text-gray-800 mb-2">Foto do Perfil</div>
+                        {user?.tipo === 'ADMIN' && !userToEdit && !usuarioCriado && (
+                            <div className="mt-6 pt-4 border-t border-gray-200">
+                                <div className="text-center mb-3">
+                                    <div className="text-sm font-medium text-gray-600">Acesso Administrativo</div>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        onClose();
+                                        onOpenSystemModal?.();
+                                    }}
+                                    className="w-full py-3 bg-gray-500 text-white rounded-lg hover:from-purple-600 hover:to-indigo-700 transition-all duration-200 text-sm font-medium flex items-center justify-center gap-2 shadow-md"
+                                >
+                                    <span className="text-lg">🔐</span>
+                                    Adicionar Usuário do Sistema
+                                </button>
+                                <p className="text-xs text-gray-500 mt-2 text-center">
+                                    Para administradores, RH e portaria
+                                </p>
+                            </div>
+                        )}
+                        <div className="text-base font-semibold text-gray-800 my-5">Foto do Perfil</div>
                         <div className="flex justify-center">
                             {cameraActive ? (
                                 <div className="text-center">
@@ -803,26 +823,6 @@ export default function AddUserModal({
                             >
                                 Fechar sem Cadastrar Biometria
                             </button>
-                        )}
-                        {user?.tipo === 'ADMIN' && !userToEdit && !usuarioCriado && (
-                            <div className="mt-6 pt-4 border-t border-gray-200">
-                                <div className="text-center mb-3">
-                                    <div className="text-sm font-medium text-gray-600">Acesso Administrativo</div>
-                                </div>
-                                <button
-                                    onClick={() => {
-                                        onClose();
-                                        onOpenSystemModal?.();
-                                    }}
-                                    className="w-full py-3 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-lg hover:from-purple-600 hover:to-indigo-700 transition-all duration-200 text-sm font-medium flex items-center justify-center gap-2 shadow-md"
-                                >
-                                    <span className="text-lg">🔐</span>
-                                    Adicionar Usuário do Sistema
-                                </button>
-                                <p className="text-xs text-gray-500 mt-2 text-center">
-                                    Para administradores, RH e portaria
-                                </p>
-                            </div>
                         )}
                     </div>
                 </div>
