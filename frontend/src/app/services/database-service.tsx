@@ -7,7 +7,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3
 
 // Tipos para os usuários do sistema
 export type TipoUsuario = 'PORTARIA' | 'ADMIN' | 'RH';
-export type TipoS = 'ESTUDANTE' | 'FUNCIONARIO';
+export type TipoS = 'ESTUDANTE' | 'FUNCIONARIO' | 'VISITANTE';
 
 export interface Usuario {
   id: number;
@@ -91,6 +91,12 @@ interface ImageOperationResponse {
   imageUrl?: string;
 }
 
+export interface NovoSistemaUsuario {
+  nome: string;
+  tipo: 'ADMIN' | 'RH' | 'PORTARIA';
+  identificador: string;
+  senha: string;
+}
 // ==================== NOVOS TIPOS PARA DIGITAIS ====================
 
 export interface FingerprintData {
@@ -149,11 +155,24 @@ class DatabaseService {
     }
   }
 
+  async connectionTest(): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.apiBaseUrl}/health`, { method: 'GET' });
+      if (!res.ok) return false;
+      const data = await res.json().catch(() => ({}));
+      return typeof data.success === 'boolean' ? data.success : false;
+    } catch (error) {
+      console.error('Connection test error:', error);
+      return false;
+    }
+  }
+
+  async isServerOnline(): Promise<boolean> {
+    const res = await this.healthCheck();
+    return res.success == true;
+  }
   // ==================== NOVAS FUNÇÕES PARA VERIFICAÇÃO DE DIGITAIS ====================
 
-  /**
-   * Verifica o status de digital de um usuário específico
-   */
   async getUserFingerprintStatus(userId: number): Promise<{ has_fingerprint: boolean; fingerprint_count: number }> {
     try {
       const response = await this.makeRequest(`/users/${userId}/finger`);
@@ -177,7 +196,7 @@ class DatabaseService {
   async getAllUsersWithFingerprintStatus(): Promise<UsuarioCompleto[]> {
     try {
       const response = await this.makeRequest('/users/fingerprints/status');
-      
+
       if (!response.success) {
         throw new Error(response.error || 'Erro ao buscar status das digitais');
       }
@@ -200,12 +219,12 @@ class DatabaseService {
       return usersWithStatus;
     } catch (error) {
       console.error('Get all users with fingerprint status error:', error);
-      
+
       // Fallback: busca usuários normalmente e depois verifica fingerprint individualmente
       try {
         console.log('🔄 Usando fallback para busca de fingerprints...');
         const users = await this.getAllUsers();
-        
+
         const usersWithStatus = await Promise.all(
           users.map(async (user) => {
             try {
@@ -245,10 +264,10 @@ class DatabaseService {
   }> {
     try {
       const data = await this.getAllUsersWithFingerprintStatus();
-      
+
       const usersWithFingerprint = data.filter(user => user.has_fingerprint).length;
       const totalUsers = data.length;
-      
+
       return {
         total_users: totalUsers,
         users_with_fingerprint: usersWithFingerprint,
@@ -417,8 +436,12 @@ class DatabaseService {
 
   // ==================== AUTENTICAÇÃO ====================
 
-  async authenticateUser(identificador: string, senha: string, tipo: TipoUsuario): Promise<UsuarioCompleto | null> {
+  // services/database-service.tsx - APENAS A FUNÇÃO authenticateUser
+
+  async authenticateUser(identificador: string, senha: string, tipo: TipoUsuario): Promise<{ user: UsuarioCompleto; token: string } | null> {
     try {
+      console.log('🔐 Iniciando autenticação...');
+
       const response = await this.makeRequest('/auth/login', {
         method: 'POST',
         body: JSON.stringify({
@@ -428,13 +451,33 @@ class DatabaseService {
         }),
       });
 
-      return response.user || null;
+      console.log('📨 Resposta completa do login:', response);
+
+      // ✅ VERIFICAÇÃO ROBUSTA
+      if (response && response.success && response.user && response.token) {
+        console.log('✅ Token JWT encontrado na resposta');
+        console.log('📏 Comprimento do token:', response.token.length);
+
+        // ✅ SALVAR TOKEN NO LOCALSTORAGE
+        localStorage.setItem('auth_token', response.token);
+        console.log('💾 Token salvo no localStorage com sucesso!');
+
+        // ✅ RETORNAR OBJETO COM USER E TOKEN
+        return {
+          user: response.user,
+          token: response.token
+        };
+      } else {
+        console.error('❌ Resposta de autenticação inválida:', response);
+        localStorage.removeItem('auth_token');
+        return null;
+      }
     } catch (error) {
-      console.error('Authentication error:', error);
+      console.error('❌ Erro na autenticação:', error);
+      localStorage.removeItem('auth_token');
       return null;
     }
   }
-
   // ==================== OPERAÇÕES COM IMAGENS ====================
 
   async uploadUserImage(userId: number, imageBase64: string): Promise<ImageOperationResponse> {
@@ -637,6 +680,26 @@ class DatabaseService {
     }
   }
 
+  async createSystemUser(userData: NovoSistemaUsuario): Promise<{ success: boolean; userId?: number; error?: string }> {
+    try {
+      const response = await this.makeRequest('/users/system', {
+        method: 'POST',
+        body: JSON.stringify(userData),
+      });
+
+      return {
+        success: true,
+        userId: response.userId
+      };
+    } catch (error) {
+      console.error('Create system user error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erro ao criar usuário do sistema'
+      };
+    }
+  }
+
   // ================= LOG ENTRADA ========================
 
   async getLogsEntrada(
@@ -666,6 +729,52 @@ class DatabaseService {
       return response.logs || [];
     } catch (error) {
       console.error('Get logs entrada error:', error);
+      return [];
+    }
+  }
+
+
+  // services/database-service.tsx - ATUALIZAR MÉTODO
+
+  async checkForNewEntries(lastCheck: string, lastChangeCount: number = 0): Promise<{
+    has_changes: boolean;
+    last_change: string;
+    change_count: number;
+    success: boolean;
+  }> {
+    try {
+      const response = await fetch(
+        `${this.apiBaseUrl}/check-new-entries?last_check=${lastCheck}&last_change_count=${lastChangeCount}`
+      );
+
+      if (!response.ok) {
+        throw new Error('Erro ao verificar novas entradas');
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Erro ao verificar novas entradas:', error);
+      return {
+        has_changes: false,
+        last_change: new Date().toISOString(),
+        change_count: lastChangeCount,
+        success: false
+      };
+    }
+  }
+
+  async getRecentEntries(limit: number = 10): Promise<LogEntrada[]> {
+    try {
+      const response = await fetch(`${this.apiBaseUrl}/recent-entries?limit=${limit}`);
+
+      if (!response.ok) {
+        throw new Error('Erro ao buscar entradas recentes');
+      }
+
+      const data = await response.json();
+      return data.entries || [];
+    } catch (error) {
+      console.error('❌ Erro ao buscar entradas recentes:', error);
       return [];
     }
   }
@@ -744,15 +853,6 @@ class DatabaseService {
   }
 
   // ==================== MÉTODOS ADICIONAIS ====================
-
-  async isServerOnline(): Promise<boolean> {
-    try {
-      await this.healthCheck();
-      return true;
-    } catch (error) {
-      return false;
-    }
-  }
 
   async getSystemStats(): Promise<{
     totalUsers: number;

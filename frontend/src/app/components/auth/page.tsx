@@ -7,16 +7,18 @@ import { databaseService, UsuarioCompleto, TipoUsuario } from "../../services/da
 import "./styles.css";
 
 interface LoginProps {
-  onLoginSuccess: (user: UsuarioCompleto) => void;
+  onLoginSuccess: (user: UsuarioCompleto, token: string) => void; // ✅ AGORA RECEBE 2 PARÂMETROS
   key?: number;
 }
-
 export default function Login({ onLoginSuccess, key }: LoginProps) {
   const [identificador, setIdentificador] = useState("");
   const [senha, setSenha] = useState("");
   const [tipo, setTipo] = useState<TipoUsuario>("ADMIN");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isApiOnline, setIsApiOnline] = useState<boolean | null>(null);
+  const [triedConnection, setTriedConnection] = useState(false);
+  const [isLoginSuccessful, setIsLoginSuccessful] = useState(false);
 
   useEffect(() => {
     if (key) {
@@ -37,14 +39,31 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
 
     setLoading(true);
     setError(null);
+    setTriedConnection(true);
+    setIsApiOnline(null);
 
     try {
-      const user = await databaseService.authenticateUser(identificador, senha, tipo);
+      const online = await databaseService.connectionTest();
+      if (!online) {
+        setIsApiOnline(false);
+        setError("Não foi possível conectar ao sistema.");
+        return;
+      }
+      setIsApiOnline(true);
 
-      if (user && user.tipo === tipo) {
-        onLoginSuccess(user);
+      // ✅ CHAMAR authenticateUser E CAPTURAR A RESPOSTA
+      const response = await databaseService.authenticateUser(identificador, senha, tipo);
+
+      // ✅ VERIFICAR SE TEM USER E TOKEN
+      if (response && response.user && response.token) {
+        setTimeout(() => {
+          // ✅ CORREÇÃO: Passar user e token separadamente
+          onLoginSuccess(response.user, response.token);
+        }, 500);
+        setIsLoginSuccessful(true);
       } else {
         setError("Identificador ou senha incorretos.");
+        setIsLoginSuccessful(false);
       }
     } catch (error) {
       console.error("Login error:", error);
@@ -97,13 +116,13 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
       <div className="login-card">
         <div className="login-header">
           <div className="logo-container">
-            <Image 
-              src="/assets/images/logo_fatec.png" 
-              alt="Logo FATEC" 
-              width={120} 
+            <Image
+              src="/assets/images/logo_fatec.png"
+              alt="Logo FATEC"
+              width={120}
               height={70}
               className="logo-image"
-              priority 
+              priority
             />
           </div>
         </div>
@@ -174,10 +193,35 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
             />
           </div>
 
-          {/* Error Message */}
           {error && (
             <div className="error-message">
               {error}
+            </div>
+          )}
+
+          {isLoginSuccessful && (
+            <div
+              className="success-message"
+              role="status"
+              aria-live="polite"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                backgroundColor: '#e6f9ec',
+                color: '#0b6b2d',
+                padding: '0.6rem 1rem',
+                borderRadius: '8px',
+                fontWeight: 600,
+                textAlign: 'center',
+                width: '100%',
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <path d="M20 6L9 17l-5-5" stroke="#0b6b2d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span>Login realizado com sucesso!</span>
             </div>
           )}
 

@@ -1,4 +1,3 @@
-// contexts/app-auth-context.tsx
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
@@ -9,7 +8,8 @@ interface AppAuthContextType {
   isAuthenticated: boolean;
   currentUser: UsuarioCompleto | null;
   loading: boolean;
-  handleLoginSuccess: (user: UsuarioCompleto) => void;
+  authToken: string | null; // ✅ NOVO
+  handleLoginSuccess: (user: UsuarioCompleto, token: string) => void; // ✅ ATUALIZADO
   handleLogout: () => void;
   checkDatabaseConnection: () => Promise<void>;
 }
@@ -22,31 +22,36 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const router = useRouter();
+  const [authToken, setAuthToken] = useState<string | null>(null);
 
-  const handleLoginSuccess = (user: UsuarioCompleto) => {
+  const handleLoginSuccess = (user: UsuarioCompleto, token: string) => {
     setIsAuthenticated(true);
     setCurrentUser(user);
+    setAuthToken(token); // ✅ NOVO
     setIsLoggingOut(false);
+
     if (typeof window !== 'undefined') {
       localStorage.setItem('fatec-portaria-user', JSON.stringify(user));
       localStorage.setItem('fatec-portaria-auth', 'true');
+      localStorage.setItem('auth_token', token); // ✅ SALVAR TOKEN
     }
   };
 
   const handleLogout = () => {
     setIsLoggingOut(true);
     setIsAuthenticated(false);
-    setCurrentUser(null);
-    
+    setTimeout(() => {
+      setCurrentUser(null);
+    }, 500);
+    setAuthToken(null);
+
     if (typeof window !== 'undefined') {
       localStorage.removeItem('fatec-portaria-user');
       localStorage.removeItem('fatec-portaria-auth');
+      localStorage.removeItem('auth_token'); // ✅ REMOVER TOKEN
     }
-    
-    setTimeout(() => {
-      router.push('/');
-      setTimeout(() => setIsLoggingOut(false), 1000);
-    }, 100);
+
+    router.push('/');
   };
 
   const checkDatabaseConnection = async () => {
@@ -59,6 +64,7 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // contexts/app-auth-context.tsx - CORREÇÃO NO useEffect
   useEffect(() => {
     let mounted = true;
 
@@ -66,20 +72,31 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
       if (mounted) {
         const savedAuth = typeof window !== 'undefined' ? localStorage.getItem('fatec-portaria-auth') : null;
         const savedUser = typeof window !== 'undefined' ? localStorage.getItem('fatec-portaria-user') : null;
-        
-        console.log('Initializing auth:', { savedAuth, savedUser });
-        
+        const savedToken = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+
+        console.log('🔄 Initializing auth:', {
+          savedAuth,
+          hasUser: !!savedUser,
+          hasToken: !!savedToken
+        });
+
         if (savedAuth === 'true' && savedUser) {
           try {
             const user = JSON.parse(savedUser);
             setCurrentUser(user);
             setIsAuthenticated(true);
+
+            // ✅ RESTAURAR TOKEN SE EXISTIR
+            if (savedToken) {
+              setAuthToken(savedToken);
+              console.log('✅ Token restaurado do localStorage');
+            }
           } catch (error) {
             console.error('Error parsing saved user:', error);
             handleLogout();
           }
         }
-        
+
         await checkDatabaseConnection();
         setLoading(false);
       }
@@ -97,6 +114,7 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
       isAuthenticated,
       currentUser,
       loading,
+      authToken,
       handleLoginSuccess,
       handleLogout,
       checkDatabaseConnection
