@@ -30,15 +30,15 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
     try {
       setLoading(true);
       const usersData = await databaseService.getAllUsersWithFingerprintStatus();
-      
+
       // ✅ FILTRAGEM POR PERFIL NO FRONTEND
       let usuariosFiltrados = usersData;
       if (user?.tipo === 'RH' || user?.tipo === 'PORTARIA') {
-        usuariosFiltrados = usersData.filter(u => 
+        usuariosFiltrados = usersData.filter(u =>
           u.tipo === 'ESTUDANTE' || u.tipo === 'FUNCIONARIO'
         );
       }
-      
+
       setUsers(usuariosFiltrados);
       setFilteredUsers(usuariosFiltrados);
     } catch (error) {
@@ -50,11 +50,13 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
   };
 
   const handleLogout = () => {
-    if (onLogout) {
-      onLogout();
+    if (typeof window !== "undefined") {
+      const confirmLogout = window.confirm("Deseja realmente sair do sistema?");
+      if (confirmLogout && onLogout) {
+        onLogout();
+      }
     }
   };
-
   const filterUsers = (text: string) => {
     setSearchText(text);
 

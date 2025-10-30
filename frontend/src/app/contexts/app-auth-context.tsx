@@ -40,8 +40,10 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   const handleLogout = () => {
     setIsLoggingOut(true);
     setIsAuthenticated(false);
-    setCurrentUser(null);
-    setAuthToken(null); // ✅ LIMPAR TOKEN
+    setTimeout(() => {
+      setCurrentUser(null);
+    }, 500);
+    setAuthToken(null);
 
     if (typeof window !== 'undefined') {
       localStorage.removeItem('fatec-portaria-user');
