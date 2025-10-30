@@ -30,6 +30,8 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
     const [hoveredHistoryItem, setHoveredHistoryItem] = useState<number | null>(null);
     const [isSidebarHovered, setIsSidebarHovered] = useState(false);
     const [showAddVisitorModal, setShowAddVisitorModal] = useState(false);
+    const [webSocketStatus, setWebSocketStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
+    const [connectionAttempts, setConnectionAttempts] = useState(0);
 
     // Estados WebSocket
     const [webSocketError, setWebSocketError] = useState<string | null>(null);
@@ -96,15 +98,28 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
         }
     }, []);
 
-    // Handler para mensagens WebSocket
     const handleWebSocketMessage = useCallback((message: WebSocketMessage) => {
-        console.log('🎯 Processando mensagem WebSocket:', message);
+        console.log('🎯 Mensagem WebSocket recebida:', message.tipo, message.dados);
 
         switch (message.tipo) {
+            case 'AUTH_SUCCESS':
+                console.log('✅ Autenticação WebSocket bem-sucedida');
+                setWebSocketStatus('connected');
+                setWebSocketError(null);
+                break;
+
+            case 'AUTH_ERROR':
+                console.error('❌ Erro de autenticação WebSocket:', message.dados);
+                setWebSocketStatus('error');
+                setWebSocketError('Falha na autenticação WebSocket');
+                break;
+
             case 'ENTRADA':
             case 'SAIDA':
-                // Converter dados WebSocket para LogEntrada
+                console.log('🔄 Atualizando interface com dados em tempo real');
                 const entradaData: EntradaWebSocket = message.dados;
+
+                // ✅ CRIAR NOVA ENTRADA
                 const novaEntrada: LogEntrada = {
                     id: entradaData.id,
                     usuario_id: entradaData.usuario_id,
@@ -118,42 +133,41 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
                     created_at: entradaData.created_at
                 };
 
-                console.log('🔄 Atualizando interface com nova entrada:', novaEntrada);
+                console.log('📝 Nova entrada processada:', novaEntrada);
 
-                // Atualizar último registro
+                // ✅ ATUALIZAR ÚLTIMO REGISTRO IMEDIATAMENTE
                 setLatestEntry(novaEntrada);
 
-                // Atualizar lista de últimos registros
+                // ✅ ATUALIZAR LISTA DE RECENTES
                 setRecentEntries(prev => {
-                    const filtered = prev.filter(entry => entry.id !== novaEntrada.id);
-                    return [novaEntrada, ...filtered.slice(0, 3)]; // Manter apenas 4 mais recentes
+                    const newEntries = [novaEntrada, ...prev.filter(entry => entry.id !== novaEntrada.id)];
+                    return newEntries.slice(0, 4); // Manter apenas os 4 mais recentes
                 });
 
-                // Buscar imagem do usuário se for uma nova entrada
+                // ✅ BUSCAR IMAGEM DO USUÁRIO (se for entrada)
                 if (!novaEntrada.controle) {
-                    try {
-                        const userId = parseInt(novaEntrada.usuario_id);
-                        if (!isNaN(userId)) {
-                            console.log('🖼️ Buscando imagem para nova entrada, usuário ID:', userId);
-                            databaseService.getUserById(userId, true).then(userData => {
+                    const userId = parseInt(novaEntrada.usuario_id);
+                    if (!isNaN(userId)) {
+                        console.log('🖼️ Buscando imagem para usuário ID:', userId);
+                        databaseService.getUserById(userId, true)
+                            .then(userData => {
                                 setImgUser(userData);
-                            }).catch(error => {
-                                console.error('❌ Erro ao carregar imagem do usuário:', error);
+                                console.log('✅ Imagem carregada com sucesso');
+                            })
+                            .catch(error => {
+                                console.error('❌ Erro ao carregar imagem:', error);
                             });
-                        }
-                    } catch (error) {
-                        console.error('❌ Erro ao processar ID do usuário:', error);
                     }
                 }
 
-                // Mostrar animação de sucesso
+                // ✅ ANIMAÇÃO DE SUCESSO
                 setShowSuccess(true);
                 setTimeout(() => setShowSuccess(false), 3000);
                 break;
 
             case 'ESTATISTICAS':
+                console.log('📈 Atualizando estatísticas em tempo real:', message.dados);
                 const estatisticas: EstatisticasWebSocket = message.dados;
-                console.log('📈 Atualizando estatísticas:', estatisticas);
                 setDailyStats({
                     total: estatisticas.total,
                     entradas: estatisticas.entradas,
@@ -162,55 +176,77 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
                 break;
 
             case 'HEARTBEAT':
-                // Apenas manter a conexão viva, não precisa fazer nada
-                console.log('❤️ WebSocket heartbeat recebido');
+                console.log('❤️ WebSocket heartbeat - Conexão ativa');
                 break;
 
             case 'ERRO':
                 console.error('❌ Erro do WebSocket:', message.dados);
                 setWebSocketError(`Erro: ${message.dados.mensagem}`);
+                setWebSocketStatus('error');
                 break;
 
             default:
-                console.warn('⚠️ Tipo de mensagem WebSocket não reconhecido:', message.tipo);
+                console.warn('⚠️ Tipo de mensagem não reconhecido:', message.tipo);
         }
     }, []);
 
-    // Handler para erros WebSocket
+    // ✅ MELHORAR O HANDLER DE ERROS
     const handleWebSocketError = useCallback((error: string) => {
-        console.error('❌ Erro WebSocket no frontend:', error);
+        console.error('❌ Erro WebSocket:', error);
         setWebSocketError(error);
+        setWebSocketStatus('error');
         setIsWebSocketConnected(false);
     }, []);
 
-    // Efeito para gerenciar WebSocket
+    // ✅ MELHORAR O EFFECT DO WEBSOCKET
     useEffect(() => {
         let mounted = true;
+        let reconnectTimeout: NodeJS.Timeout;
 
         const initializeWebSocket = async () => {
+            if (!mounted) return;
+
             console.log('🚀 Inicializando WebSocket...');
+            setWebSocketStatus('connecting');
 
-            // Primeiro carrega dados iniciais
-            await loadInitialData();
+            try {
+                // ✅ CARREGAR DADOS INICIAIS PRIMEIRO
+                await loadInitialData();
 
-            // Depois conecta WebSocket
-            if (mounted) {
-                console.log('🔗 Conectando ao WebSocket Server...');
-                const connected = await webSocketService.connect();
+                if (mounted) {
+                    // ✅ CONECTAR WEBSOCKET
+                    console.log('🔗 Conectando ao WebSocket...');
+                    const connected = await webSocketService.connect();
 
-                if (connected && mounted) {
-                    console.log('✅ WebSocket conectado com sucesso');
-                    setIsWebSocketConnected(true);
-                    setWebSocketError(null);
+                    if (connected && mounted) {
+                        console.log('✅ WebSocket conectado, registrando handlers...');
 
-                    // Registrar handlers
-                    webSocketService.onMessage(handleWebSocketMessage);
-                    webSocketService.onError(handleWebSocketError);
+                        // ✅ REGISTRAR HANDLERS
+                        webSocketService.onMessage(handleWebSocketMessage);
+                        webSocketService.onError(handleWebSocketError);
 
-                    console.log('🎯 Handlers WebSocket registrados');
-                } else if (mounted) {
-                    console.error('❌ Falha na conexão WebSocket');
-                    setWebSocketError('Não foi possível conectar ao servidor em tempo real');
+                        setWebSocketStatus('connected');
+                        setIsWebSocketConnected(true);
+                        setWebSocketError(null);
+                    } else if (mounted) {
+                        console.error('❌ Falha na conexão WebSocket');
+                        setWebSocketStatus('error');
+                        setWebSocketError('Não foi possível conectar ao servidor em tempo real');
+
+                        // ✅ TENTAR RECONECTAR APÓS 5 SEGUNDOS
+                        if (connectionAttempts < 3) {
+                            reconnectTimeout = setTimeout(() => {
+                                setConnectionAttempts(prev => prev + 1);
+                                initializeWebSocket();
+                            }, 5000);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('❌ Erro na inicialização do WebSocket:', error);
+                if (mounted) {
+                    setWebSocketStatus('error');
+                    setWebSocketError('Erro ao inicializar conexão em tempo real');
                 }
             }
         };
@@ -220,9 +256,10 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
         return () => {
             console.log('🧹 Limpando WebSocket...');
             mounted = false;
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
             webSocketService.disconnect();
         };
-    }, [loadInitialData, handleWebSocketMessage, handleWebSocketError]);
+    }, [loadInitialData, handleWebSocketMessage, handleWebSocketError, connectionAttempts]);
 
     // Funções de formatação
     const formatDate = (dateString: string) => {
@@ -246,6 +283,15 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
         return controle ? '↩️' : '✅';
     };
 
+    const getWebSocketStatusText = () => {
+        switch (webSocketStatus) {
+            case 'connected': return '🔴 LIVE';
+            case 'connecting': return '🟡 Conectando...';
+            case 'error': return '🔴 Offline';
+            default: return '⚪ Desconectado';
+        }
+    };
+
     if (loading) {
         return (
             <div className="h-screen overflow-hidden flex flex-col bg-gray-50">
@@ -262,12 +308,6 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
 
     return (
         <div className="h-screen flex flex-col bg-gray-50 relative">
-            {/* {isWebSocketConnected && (
-                <div className="fixed top-2 right-2 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-medium z-50 flex items-center gap-2">
-                    <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                    Tempo Real
-                </div>
-            )} */}
 
             {webSocketError && (
                 <div className="fixed top-2 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-medium z-50 max-w-md text-center">
@@ -285,7 +325,7 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
                             <div className="text-3xl font-bold mb-1 tracking-wide">FATEC ITU</div>
                         </div>
                         <h1 className="text-xl font-normal opacity-90 m-0">
-                            PORTARIA - SISTEMA {isWebSocketConnected && '🔴 LIVE'}
+                            PORTARIA - SISTEMA {getWebSocketStatusText()}
                         </h1>
                     </div>
 
@@ -294,7 +334,9 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
                         {/* Main Card */}
                         <div className="flex-2 min-w-80 bg-white p-5 rounded-lg shadow-sm border border-gray-200 transition-all duration-200">
                             <h2 className="text-gray-800 text-lg font-semibold mb-4 border-b border-gray-200 pb-2">
-                                ÚLTIMO REGISTRO {isWebSocketConnected && '🎯'}
+                                ÚLTIMO REGISTRO {webSocketStatus === 'connected' && '🎯'}
+                                {webSocketStatus === 'connecting' && '⏳'}
+                                {webSocketStatus === 'error' && '⚠️'}
                             </h2>
 
                             {!latestEntry ? (
