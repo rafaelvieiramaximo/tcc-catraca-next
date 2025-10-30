@@ -1,11 +1,9 @@
-// components/RegisterEntry/index.tsx (COM WEBSOCKET CORRIGIDO)
+// components/RegisterEntry/index.tsx (POLLING CORRIGIDO - SEM LOOP INFINITO)
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { databaseService, UsuarioCompleto, LogEntrada, Usuario } from '../../services/database-service';
-import { webSocketService, WebSocketMessage } from '../../services/websocket-service';
-import { EntradaWebSocket, EstatisticasWebSocket } from '../../types/websocket-types';
+import { databaseService, UsuarioCompleto, LogEntrada } from '../../services/database-service';
 import NavBarRegister from './Navbar';
 import AddVisitorModal from './modalAddVisit';
 
@@ -27,239 +25,121 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
     const [dailyStats, setDailyStats] = useState<DailyStats>({ total: 0, entradas: 0, saidas: 0 });
     const [loading, setLoading] = useState(true);
     const [showSuccess, setShowSuccess] = useState(false);
-    const [hoveredHistoryItem, setHoveredHistoryItem] = useState<number | null>(null);
-    const [isSidebarHovered, setIsSidebarHovered] = useState(false);
     const [showAddVisitorModal, setShowAddVisitorModal] = useState(false);
-    const [webSocketStatus, setWebSocketStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
-    const [connectionAttempts, setConnectionAttempts] = useState(0);
+    const [hoveredHistoryItem, setHoveredHistoryItem] = useState<number | null>(null);
 
-    // Estados WebSocket
-    const [webSocketError, setWebSocketError] = useState<string | null>(null);
-    const [isWebSocketConnected, setIsWebSocketConnected] = useState(false);
+    // ✅ USAR useRef PARA EVITAR RE-RENDERS DESNECESSÁRIOS
+    const lastChangeCountRef = useRef<number>(0);
+    const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     const router = useRouter();
 
-    // Carregar dados iniciais via REST (apenas uma vez)
-    const loadInitialData = useCallback(async () => {
+    // ✅ FUNÇÃO PARA CARREGAR DADOS (SEM DEPENDÊNCIAS PROBLEMÁTICAS)
+    const loadData = useCallback(async (showAnimation: boolean = false) => {
         try {
-            setLoading(true);
-            console.log('📊 Carregando dados iniciais...');
+            console.log('📊 Carregando dados...');
 
-            const [logs, allTodayLogs] = await Promise.all([
-                databaseService.getLogsEntrada(10, 0, { hoje: true }),
-                databaseService.getLogsEntrada(1000, 0, { hoje: true })
-            ]);
+            const entries = await databaseService.getRecentEntries(10);
 
-            console.log('📋 Logs carregados:', logs?.length);
-            console.log('📈 Todos os logs de hoje:', allTodayLogs?.length);
-
-            if (logs && logs.length > 0) {
-                const sortedLogs = [...logs].sort((a, b) => {
+            if (entries && entries.length > 0) {
+                const sortedEntries = [...entries].sort((a, b) => {
                     const dateA = new Date(`${a.data_entrada}T${a.horario}`);
                     const dateB = new Date(`${b.data_entrada}T${b.horario}`);
                     return dateB.getTime() - dateA.getTime();
                 });
 
-                const latestFour = sortedLogs.slice(0, 4);
-                setRecentEntries(latestFour);
-
-                const newEntry = sortedLogs[0];
-                setLatestEntry(newEntry);
+                setRecentEntries(sortedEntries.slice(0, 4));
+                setLatestEntry(sortedEntries[0]);
 
                 // Buscar imagem do usuário
-                try {
-                    const userId = parseInt(newEntry.usuario_id);
-                    if (!isNaN(userId)) {
-                        console.log('🖼️ Buscando imagem do usuário ID:', userId);
-                        const userData = await databaseService.getUserById(userId, true);
-                        setImgUser(userData);
-                    }
-                } catch (error) {
-                    console.error('❌ Erro ao carregar imagem do usuário:', error);
+                const userId = parseInt(sortedEntries[0].usuario_id);
+                if (!isNaN(userId)) {
+                    const userData = await databaseService.getUserById(userId, true);
+                    setImgUser(userData);
                 }
-            }
 
-            if (allTodayLogs && allTodayLogs.length > 0) {
+                // Calcular estatísticas
                 const stats: DailyStats = {
-                    total: allTodayLogs.length,
-                    entradas: allTodayLogs.filter(log => !log.controle).length,
-                    saidas: allTodayLogs.filter(log => log.controle).length
+                    total: sortedEntries.length,
+                    entradas: sortedEntries.filter(entry => !entry.controle).length,
+                    saidas: sortedEntries.filter(entry => entry.controle).length
                 };
                 setDailyStats(stats);
-                console.log('📊 Estatísticas calculadas:', stats);
-            } else {
-                console.log('ℹ️ Nenhum registro encontrado para hoje');
+
+                // Mostrar animação se solicitado
+                if (showAnimation) {
+                    setShowSuccess(true);
+                    setTimeout(() => setShowSuccess(false), 2000);
+                }
             }
+
+            setLoading(false);
         } catch (error) {
-            console.error('❌ Erro ao carregar dados iniciais:', error);
-            setWebSocketError('Erro ao carregar dados iniciais');
-        } finally {
+            console.error('❌ Erro ao carregar dados:', error);
             setLoading(false);
         }
-    }, []);
+    }, []); // ✅ SEM DEPENDÊNCIAS!
 
-    const handleWebSocketMessage = useCallback((message: WebSocketMessage) => {
-        console.log('🎯 Mensagem WebSocket recebida:', message.tipo, message.dados);
+    // ✅ FUNÇÃO DE POLLING (VERIFICA MUDANÇAS)
+    const checkForUpdates = useCallback(async () => {
+        try {
+            const result = await databaseService.checkForNewEntries(
+                new Date().toISOString(),
+                lastChangeCountRef.current
+            );
 
-        switch (message.tipo) {
-            case 'AUTH_SUCCESS':
-                console.log('✅ Autenticação WebSocket bem-sucedida');
-                setWebSocketStatus('connected');
-                setWebSocketError(null);
-                break;
+            console.log('🔄 Verificação:', {
+                hasChanges: result.has_changes,
+                lastCount: lastChangeCountRef.current,
+                newCount: result.change_count
+            });
 
-            case 'AUTH_ERROR':
-                console.error('❌ Erro de autenticação WebSocket:', message.dados);
-                setWebSocketStatus('error');
-                setWebSocketError('Falha na autenticação WebSocket');
-                break;
-
-            case 'ENTRADA':
-            case 'SAIDA':
-                console.log('🔄 Atualizando interface com dados em tempo real');
-                const entradaData: EntradaWebSocket = message.dados;
-
-                // ✅ CRIAR NOVA ENTRADA
-                const novaEntrada: LogEntrada = {
-                    id: entradaData.id,
-                    usuario_id: entradaData.usuario_id,
-                    identificador: entradaData.identificador,
-                    nome: entradaData.nome,
-                    tipo: entradaData.tipo,
-                    periodo: entradaData.periodo,
-                    data_entrada: entradaData.data_entrada,
-                    horario: entradaData.horario,
-                    controle: entradaData.controle,
-                    created_at: entradaData.created_at
-                };
-
-                console.log('📝 Nova entrada processada:', novaEntrada);
-
-                // ✅ ATUALIZAR ÚLTIMO REGISTRO IMEDIATAMENTE
-                setLatestEntry(novaEntrada);
-
-                // ✅ ATUALIZAR LISTA DE RECENTES
-                setRecentEntries(prev => {
-                    const newEntries = [novaEntrada, ...prev.filter(entry => entry.id !== novaEntrada.id)];
-                    return newEntries.slice(0, 4); // Manter apenas os 4 mais recentes
-                });
-
-                // ✅ BUSCAR IMAGEM DO USUÁRIO (se for entrada)
-                if (!novaEntrada.controle) {
-                    const userId = parseInt(novaEntrada.usuario_id);
-                    if (!isNaN(userId)) {
-                        console.log('🖼️ Buscando imagem para usuário ID:', userId);
-                        databaseService.getUserById(userId, true)
-                            .then(userData => {
-                                setImgUser(userData);
-                                console.log('✅ Imagem carregada com sucesso');
-                            })
-                            .catch(error => {
-                                console.error('❌ Erro ao carregar imagem:', error);
-                            });
-                    }
-                }
-
-                // ✅ ANIMAÇÃO DE SUCESSO
-                setShowSuccess(true);
-                setTimeout(() => setShowSuccess(false), 3000);
-                break;
-
-            case 'ESTATISTICAS':
-                console.log('📈 Atualizando estatísticas em tempo real:', message.dados);
-                const estatisticas: EstatisticasWebSocket = message.dados;
-                setDailyStats({
-                    total: estatisticas.total,
-                    entradas: estatisticas.entradas,
-                    saidas: estatisticas.saidas
-                });
-                break;
-
-            case 'HEARTBEAT':
-                console.log('❤️ WebSocket heartbeat - Conexão ativa');
-                break;
-
-            case 'ERRO':
-                console.error('❌ Erro do WebSocket:', message.dados);
-                setWebSocketError(`Erro: ${message.dados.mensagem}`);
-                setWebSocketStatus('error');
-                break;
-
-            default:
-                console.warn('⚠️ Tipo de mensagem não reconhecido:', message.tipo);
+            if (result.has_changes) {
+                console.log('🎯 MUDANÇAS DETECTADAS! Atualizando...');
+                
+                // ✅ ATUALIZAR REF (NÃO CAUSA RE-RENDER)
+                lastChangeCountRef.current = result.change_count;
+                
+                // ✅ CARREGAR DADOS COM ANIMAÇÃO
+                await loadData(true);
+            }
+        } catch (error) {
+            console.error('❌ Erro ao verificar atualizações:', error);
         }
-    }, []);
+    }, [loadData]); // ✅ APENAS loadData como dependência
 
-    // ✅ MELHORAR O HANDLER DE ERROS
-    const handleWebSocketError = useCallback((error: string) => {
-        console.error('❌ Erro WebSocket:', error);
-        setWebSocketError(error);
-        setWebSocketStatus('error');
-        setIsWebSocketConnected(false);
-    }, []);
-
-    // ✅ MELHORAR O EFFECT DO WEBSOCKET
+    // ✅ EFFECT INICIAL (EXECUTA UMA VEZ)
     useEffect(() => {
-        let mounted = true;
-        let reconnectTimeout: NodeJS.Timeout;
+        console.log('🚀 Inicializando RegisterEntry...');
+        
+        // Carregar dados iniciais
+        const initialize = async () => {
+            await loadData(false);
+            
+            // Obter contador inicial
+            const initialCheck = await databaseService.checkForNewEntries(
+                new Date().toISOString(),
+                0
+            );
+            lastChangeCountRef.current = initialCheck.change_count;
+            console.log('✅ Contador inicial:', lastChangeCountRef.current);
+        };
 
-        const initializeWebSocket = async () => {
-            if (!mounted) return;
+        initialize();
 
-            console.log('🚀 Inicializando WebSocket...');
-            setWebSocketStatus('connecting');
+        // ✅ INICIAR POLLING (VERIFICA A CADA 3 SEGUNDOS)
+        pollingIntervalRef.current = setInterval(() => {
+            checkForUpdates();
+        }, 3000);
 
-            try {
-                // ✅ CARREGAR DADOS INICIAIS PRIMEIRO
-                await loadInitialData();
-
-                if (mounted) {
-                    // ✅ CONECTAR WEBSOCKET
-                    console.log('🔗 Conectando ao WebSocket...');
-                    const connected = await webSocketService.connect();
-
-                    if (connected && mounted) {
-                        console.log('✅ WebSocket conectado, registrando handlers...');
-
-                        // ✅ REGISTRAR HANDLERS
-                        webSocketService.onMessage(handleWebSocketMessage);
-                        webSocketService.onError(handleWebSocketError);
-
-                        setWebSocketStatus('connected');
-                        setIsWebSocketConnected(true);
-                        setWebSocketError(null);
-                    } else if (mounted) {
-                        console.error('❌ Falha na conexão WebSocket');
-                        setWebSocketStatus('error');
-                        setWebSocketError('Não foi possível conectar ao servidor em tempo real');
-
-                        // ✅ TENTAR RECONECTAR APÓS 5 SEGUNDOS
-                        if (connectionAttempts < 3) {
-                            reconnectTimeout = setTimeout(() => {
-                                setConnectionAttempts(prev => prev + 1);
-                                initializeWebSocket();
-                            }, 5000);
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error('❌ Erro na inicialização do WebSocket:', error);
-                if (mounted) {
-                    setWebSocketStatus('error');
-                    setWebSocketError('Erro ao inicializar conexão em tempo real');
-                }
+        // ✅ CLEANUP
+        return () => {
+            console.log('🧹 Limpando polling...');
+            if (pollingIntervalRef.current) {
+                clearInterval(pollingIntervalRef.current);
             }
         };
-
-        initializeWebSocket();
-
-        return () => {
-            console.log('🧹 Limpando WebSocket...');
-            mounted = false;
-            if (reconnectTimeout) clearTimeout(reconnectTimeout);
-            webSocketService.disconnect();
-        };
-    }, [loadInitialData, handleWebSocketMessage, handleWebSocketError, connectionAttempts]);
+    }, []); // ✅ ARRAY VAZIO = EXECUTA UMA VEZ!
 
     // Funções de formatação
     const formatDate = (dateString: string) => {
@@ -283,15 +163,6 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
         return controle ? '↩️' : '✅';
     };
 
-    const getWebSocketStatusText = () => {
-        switch (webSocketStatus) {
-            case 'connected': return '🔴 LIVE';
-            case 'connecting': return '🟡 Conectando...';
-            case 'error': return '🔴 Offline';
-            default: return '⚪ Desconectado';
-        }
-    };
-
     if (loading) {
         return (
             <div className="h-screen overflow-hidden flex flex-col bg-gray-50">
@@ -308,12 +179,11 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
 
     return (
         <div className="h-screen flex flex-col bg-gray-50 relative">
-
-            {webSocketError && (
-                <div className="fixed top-2 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-medium z-50 max-w-md text-center">
-                    ⚠️ {webSocketError}
-                </div>
-            )}
+            {/* Indicador de Sistema Ativo */}
+            {/* <div className="fixed top-2 right-2 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-medium z-50 flex items-center gap-2">
+                <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                Atualização Automática
+            </div> */}
 
             <div className={showAddVisitorModal ? 'blur-sm transition-all duration-300' : ''}>
                 <NavBarRegister onLogout={onLogout} user={user} />
@@ -325,8 +195,11 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
                             <div className="text-3xl font-bold mb-1 tracking-wide">FATEC ITU</div>
                         </div>
                         <h1 className="text-xl font-normal opacity-90 m-0">
-                            PORTARIA - SISTEMA {getWebSocketStatusText()}
+                            PORTARIA - SISTEMA 🟢 ATIVO
                         </h1>
+                        <div className="text-sm opacity-70 mt-1">
+                            Atualização automática via trigger
+                        </div>
                     </div>
 
                     {/* Dashboard */}
@@ -334,9 +207,7 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
                         {/* Main Card */}
                         <div className="flex-2 min-w-80 bg-white p-5 rounded-lg shadow-sm border border-gray-200 transition-all duration-200">
                             <h2 className="text-gray-800 text-lg font-semibold mb-4 border-b border-gray-200 pb-2">
-                                ÚLTIMO REGISTRO {webSocketStatus === 'connected' && '🎯'}
-                                {webSocketStatus === 'connecting' && '⏳'}
-                                {webSocketStatus === 'error' && '⚠️'}
+                                ÚLTIMO REGISTRO 🔄
                             </h2>
 
                             {!latestEntry ? (
@@ -346,8 +217,9 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
                                     <p className="text-sm opacity-80">Aguardando primeira entrada do dia...</p>
                                 </div>
                             ) : (
-                                <div className={`bg-white border border-gray-200 rounded p-4 mb-4 shadow-sm transition-all duration-200 ${showSuccess ? 'border-l-4 border-l-green-500 shadow-green-100' : ''
-                                    }`}>
+                                <div className={`bg-white border border-gray-200 rounded p-4 mb-4 shadow-sm transition-all duration-200 ${
+                                    showSuccess ? 'border-l-4 border-l-green-500 shadow-green-100' : ''
+                                }`}>
                                     <div className="flex items-start gap-4 mb-4">
                                         <div className="w-24 h-24 bg-gray-700 rounded-full flex items-center justify-center flex-shrink-0">
                                             {imgUser?.imagem_url ? (
@@ -397,18 +269,19 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
                                 </div>
                             )}
 
-                            {/* Histórico dos últimos 4 registros */}
+                            {/* Histórico */}
                             <div className="mt-5 pt-4 border-t border-gray-200">
                                 <h3 className="text-gray-800 text-base font-semibold mb-3">
-                                    ÚLTIMOS REGISTROS {isWebSocketConnected && '🔄'}
+                                    ÚLTIMOS REGISTROS 🔄
                                 </h3>
                                 <div className="flex flex-col gap-2">
                                     {recentEntries.length > 0 ? (
                                         recentEntries.map((entry, index) => (
                                             <div
                                                 key={`${entry.id}-${entry.horario}`}
-                                                className={`flex items-center p-3 bg-gray-50 rounded border border-gray-200 transition-all duration-200 cursor-pointer ${hoveredHistoryItem === index ? 'bg-white border-blue-400 shadow-sm' : ''
-                                                    }`}
+                                                className={`flex items-center p-3 bg-gray-50 rounded border border-gray-200 transition-all duration-200 cursor-pointer ${
+                                                    hoveredHistoryItem === index ? 'bg-white border-blue-400 shadow-sm' : ''
+                                                }`}
                                                 onMouseEnter={() => setHoveredHistoryItem(index)}
                                                 onMouseLeave={() => setHoveredHistoryItem(null)}
                                             >
@@ -439,31 +312,11 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
 
                         {/* Sidebar */}
                         <div className="flex-1 min-w-64 flex flex-col gap-4">
-                            {/* Logs Card */}
-                            <div
-                                className="bg-white text-gray-800 p-5 rounded text-center shadow-sm border border-gray-200 transition-all duration-200"
-                                onMouseEnter={() => setIsSidebarHovered(true)}
-                                onMouseLeave={() => setIsSidebarHovered(false)}
-                            >
-                                <div className="text-3xl mb-3 opacity-80">📊</div>
-                                <h3 className="text-gray-800 text-lg font-semibold mb-2">LOG DE ENTRADAS</h3>
-                                <p className="text-gray-500 mb-4 leading-relaxed text-sm">
-                                    Visualize todos os registros de entrada e saída
-                                </p>
-                                <button
-                                    className={`w-60 bg-gray-800 border-none text-white py-2 px-4 rounded font-semibold cursor-pointer transition-all duration-200 text-sm ${isSidebarHovered ? 'bg-gray-700 transform -translate-y-0.5' : ''
-                                        }`}
-                                    onClick={() => router.push('/entry-logs')}
-                                >
-                                    Acessar Logs
-                                </button>
-                            </div>
-
                             {/* Stats Card */}
                             <div className="bg-white text-gray-800 p-5 rounded text-center shadow-sm border border-gray-200">
                                 <div className="text-3xl mb-3 opacity-80">📈</div>
                                 <h3 className="text-gray-800 text-lg font-semibold mb-2">
-                                    ESTATÍSTICAS DO DIA {isWebSocketConnected && '📡'}
+                                    ESTATÍSTICAS DO DIA 📡
                                 </h3>
                                 <div className="grid grid-cols-3 gap-3 mt-3">
                                     <div className="flex flex-col items-center p-3 bg-gray-50 rounded border border-gray-200">
@@ -481,15 +334,30 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
                                 </div>
                             </div>
 
-                            {/* Adicionar Visitante */}
+                            {/* Logs Card */}
+                            <div className="bg-white text-gray-800 p-5 rounded text-center shadow-sm border border-gray-200">
+                                <div className="text-3xl mb-3 opacity-80">📊</div>
+                                <h3 className="text-gray-800 text-lg font-semibold mb-2">LOG DE ENTRADAS</h3>
+                                <p className="text-gray-500 mb-4 leading-relaxed text-sm">
+                                    Visualize todos os registros
+                                </p>
+                                <button
+                                    className="w-60 bg-gray-800 text-white py-2 px-4 rounded font-semibold cursor-pointer transition-all duration-200 text-sm hover:bg-gray-700"
+                                    onClick={() => router.push('/entry-logs')}
+                                >
+                                    Acessar Logs
+                                </button>
+                            </div>
+
+                            {/* Visitante Card */}
                             <div className="bg-white text-gray-800 p-5 rounded text-center shadow-sm border border-gray-200">
                                 <div className="text-3xl mb-3 opacity-80">👤</div>
                                 <h3 className="text-gray-800 text-lg font-semibold mb-2">CADASTRAR VISITANTE</h3>
                                 <p className="text-gray-500 mb-4 leading-relaxed text-sm">
-                                    Cadastre visitantes temporários com foto e biometria
+                                    Cadastre visitantes temporários
                                 </p>
                                 <button
-                                    className="w-60 bg-purple-600 border-none text-white py-2 px-4 rounded font-semibold cursor-pointer transition-all duration-200 text-sm hover:bg-purple-700"
+                                    className="w-60 bg-purple-600 text-white py-2 px-4 rounded font-semibold cursor-pointer transition-all duration-200 text-sm hover:bg-purple-700"
                                     onClick={() => setShowAddVisitorModal(true)}
                                 >
                                     ➕ Adicionar Visitante
@@ -502,17 +370,17 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
 
             {/* Success Animation */}
             {showSuccess && (
-                <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-green-500 text-white p-4 rounded flex items-center gap-3 z-50 shadow-lg border border-green-600">
-                    <div className="text-xl">🎉</div>
-                    <span className="font-semibold text-sm">Novo registro em tempo real!</span>
+                <div className="fixed top-4 right-4 bg-green-500 text-white p-3 rounded flex items-center gap-2 z-50 shadow-lg animate-bounce">
+                    <div className="text-lg">🔄</div>
+                    <span className="font-semibold text-sm">Novo registro!</span>
                 </div>
             )}
 
-            {/* Modal de Visitante */}
+            {/* Modal */}
             <AddVisitorModal
                 visible={showAddVisitorModal}
                 onClose={() => setShowAddVisitorModal(false)}
-                onVisitorAdded={loadInitialData}
+                onVisitorAdded={() => loadData(false)}
             />
         </div>
     );
