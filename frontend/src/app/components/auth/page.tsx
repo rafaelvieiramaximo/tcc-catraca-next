@@ -7,10 +7,9 @@ import { databaseService, UsuarioCompleto, TipoUsuario } from "../../services/da
 import "./styles.css";
 
 interface LoginProps {
-  onLoginSuccess: (user: UsuarioCompleto) => void;
+  onLoginSuccess: (user: UsuarioCompleto, token: string) => void; // ✅ AGORA RECEBE 2 PARÂMETROS
   key?: number;
 }
-
 export default function Login({ onLoginSuccess, key }: LoginProps) {
   const [identificador, setIdentificador] = useState("");
   const [senha, setSenha] = useState("");
@@ -52,11 +51,14 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
       }
       setIsApiOnline(true);
 
-      const user = await databaseService.authenticateUser(identificador, senha, tipo);
+      // ✅ CHAMAR authenticateUser E CAPTURAR A RESPOSTA
+      const response = await databaseService.authenticateUser(identificador, senha, tipo);
 
-      if (user && user.tipo === tipo) {
+      // ✅ VERIFICAR SE TEM USER E TOKEN
+      if (response && response.user && response.token) {
         setTimeout(() => {
-          onLoginSuccess(user);
+          // ✅ CORREÇÃO: Passar user e token separadamente
+          onLoginSuccess(response.user, response.token);
         }, 500);
         setIsLoginSuccessful(true);
       } else {
@@ -217,7 +219,7 @@ export default function Login({ onLoginSuccess, key }: LoginProps) {
               }}
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
-                <path d="M20 6L9 17l-5-5" stroke="#0b6b2d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M20 6L9 17l-5-5" stroke="#0b6b2d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               <span>Login realizado com sucesso!</span>
             </div>

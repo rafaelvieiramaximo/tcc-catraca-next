@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const app = express();
@@ -17,6 +18,34 @@ const pool = new Pool({
   password: process.env.PGPASSWORD,
   port: process.env.PGPORT,
 });
+
+// ✅ CORRIGIDO: Verificar se o arquivo existe antes de importar
+let webSocketServer = null;
+
+console.log('🔄 Inicializando WebSocket Server...');
+
+try {
+  // Verificar se o arquivo existe fisicamente
+  const websocketPath = path.join(__dirname, 'websocket-server.js');
+  if (fs.existsSync(websocketPath)) {
+    console.log('✅ Arquivo websocket-server.js encontrado');
+
+    const WebSocketServer = require('./websocket-server');
+    console.log('✅ Módulo WebSocketServer carregado');
+
+    // Inicializar WebSocket Server
+    webSocketServer = new WebSocketServer(5001);
+    console.log('🎯 WebSocket Server inicializado na porta 5001');
+  } else {
+    console.log('❌ Arquivo websocket-server.js não encontrado em:', websocketPath);
+  }
+} catch (error) {
+  console.error('❌ Erro ao inicializar WebSocket Server:', error.message);
+  if (error.code === 'MODULE_NOT_FOUND') {
+    console.log('📦 Instale as dependências: npm install ws jsonwebtoken');
+  }
+  webSocketServer = null;
+}
 
 // ==================== CONFIGURAÇÃO MULTER ====================
 
@@ -43,7 +72,9 @@ const upload = multer({
   }
 });
 
-// Middleware
+// ==================== MIDDLEWARES (PRIMEIRO!) ====================
+
+// ✅ CORREÇÃO: Middlewares DEVEM vir ANTES das rotas
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -53,6 +84,72 @@ app.use('/assets', express.static(assetsDir));
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
+});
+
+// ==================== WEBSOCKET ENTRYLOGS (AGORA DEPOIS DOS MIDDLEWARES) ====================
+
+app.post('/api/register-entry', async (req, res) => {
+  console.log('🎯 ROTA /api/register-entry CHAMADA! Body:', req.body);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { usuario_id, identificador, nome, tipo, periodo, data_entrada, horario, controle } = req.body;
+
+    console.log('📝 Registrando entrada/saída:', { usuario_id, identificador, nome, tipo, controle });
+
+    // Inserir registro na tabela log_entrada
+    const result = await client.query(
+      `INSERT INTO log_entrada 
+       (usuario_id, identificador, nome, tipo, periodo, data_entrada, horario, controle) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+       RETURNING *`,
+      [usuario_id, identificador, nome, tipo, periodo, data_entrada, horario, controle]
+    );
+
+    const newEntry = result.rows[0];
+
+    await client.query('COMMIT');
+
+    // ✅ NOTIFICAR TODOS OS CLIENTES WEBSOCKET (se disponível)
+    if (webSocketServer) {
+      webSocketServer.broadcastNewEntry(newEntry);
+      console.log('✅ Registro criado e notificado via WebSocket:', newEntry.id);
+    } else {
+      console.log('✅ Registro criado (WebSocket não disponível):', newEntry.id);
+    }
+
+    res.json({
+      success: true,
+      message: controle ? 'Saída registrada com sucesso' : 'Entrada registrada com sucesso',
+      data: newEntry
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('❌ Erro ao registrar entrada/saída:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao registrar entrada/saída'
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// ==================== WEBSOCKET STATUS ====================
+
+app.get('/api/websocket-status', (req, res) => {
+  if (webSocketServer) {
+    res.json(webSocketServer.getStatus());
+  } else {
+    res.json({
+      port: null,
+      clientsConnected: 0,
+      status: 'NOT_AVAILABLE'
+    });
+  }
 });
 
 // ==================== ENDPOINT DE UPLOAD ====================
@@ -245,7 +342,22 @@ app.post('/api/auth/login', async (req, res) => {
       user.imagem_url = `http://localhost:${port}/${user.imagem_path}`;
     }
 
-    return res.json({ success: true, user, message: 'Login realizado com sucesso' });
+    const token = jwt.sign(
+      {
+        userId: user.id,
+        role: user.tipo,
+        identificador: user.identificador
+      },
+      process.env.JWT_SECRET || 'portaria-secret-key-2024',
+      { expiresIn: '24h' }
+    );
+
+    return res.json({
+      success: true,
+      user,
+      token, // ✅ TOKEN INCLUÍDO NA RESPOSTA
+      message: 'Login realizado com sucesso'
+    });
 
   } catch (error) {
     console.error('Login error:', error);
@@ -339,7 +451,7 @@ app.post('/api/users', async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Create user error:', err);
-    
+
     await pool.query(
       `INSERT INTO log (identificador, acao, status, detalhes, nome_usuario)
        VALUES ($1, $2, $3, $4, $5)`,
@@ -804,7 +916,6 @@ app.get('/api/logs/entrada', async (req, res) => {
   }
 });
 
-
 // ==================== ENDPOINTS CATRACA ====================
 
 const CATRACA_API_URL = 'http://192.168.11.220:5000';
@@ -950,6 +1061,7 @@ app.post('/api/catraca/iniciar-cadastro', async (req, res) => {
     client.release();
   }
 });
+
 // Endpoint para criar usuário COM biometria (transação completa)
 app.post('/api/users/com-biometria', upload.single('image'), async (req, res) => {
   const client = await pool.connect();
@@ -1107,6 +1219,7 @@ app.post('/api/users/com-biometria', upload.single('image'), async (req, res) =>
     client.release();
   }
 });
+
 // Endpoint para verificar status da catraca
 app.get('/api/catraca/status', async (req, res) => {
   try {
@@ -1152,7 +1265,8 @@ app.get('/api/health', async (req, res) => {
       database: 'Conectado',
       assets_system: assetsExists ? 'Ativo' : 'Inativo',
       images_folder: usersImagesExists ? 'Pronto' : 'Não configurado',
-      server_time: result.rows[0].server_time
+      server_time: result.rows[0].server_time,
+      websocket_status: webSocketServer ? webSocketServer.getStatus() : { status: 'NOT_AVAILABLE' }
     });
   } catch (error) {
     console.error('Health check error:', error);
@@ -1181,6 +1295,7 @@ app.use((err, req, res, next) => {
 });
 
 app.use('*', (req, res) => {
+  console.log(`❌ Rota não encontrada: ${req.method} ${req.originalUrl}`);
   res.status(404).json({ error: 'Rota não encontrada' });
 });
 
@@ -1221,6 +1336,11 @@ async function startServer() {
     console.log(`📍 http://localhost:${port}/api`);
     console.log(`🖼️  Sistema de imagens: ARQUIVOS FÍSICOS`);
     console.log(`📁 Pasta: ${usersImagesDir}`);
+    if (webSocketServer) {
+      console.log(`🔌 WebSocket Server rodando na porta 5001`);
+    } else {
+      console.log(`⚠️  WebSocket Server não disponível`);
+    }
   });
 }
 

@@ -436,8 +436,12 @@ class DatabaseService {
 
   // ==================== AUTENTICAÇÃO ====================
 
-  async authenticateUser(identificador: string, senha: string, tipo: TipoUsuario): Promise<UsuarioCompleto | null> {
+  // services/database-service.tsx - APENAS A FUNÇÃO authenticateUser
+
+  async authenticateUser(identificador: string, senha: string, tipo: TipoUsuario): Promise<{ user: UsuarioCompleto; token: string } | null> {
     try {
+      console.log('🔐 Iniciando autenticação...');
+
       const response = await this.makeRequest('/auth/login', {
         method: 'POST',
         body: JSON.stringify({
@@ -447,13 +451,33 @@ class DatabaseService {
         }),
       });
 
-      return response.user || null;
+      console.log('📨 Resposta completa do login:', response);
+
+      // ✅ VERIFICAÇÃO ROBUSTA
+      if (response && response.success && response.user && response.token) {
+        console.log('✅ Token JWT encontrado na resposta');
+        console.log('📏 Comprimento do token:', response.token.length);
+
+        // ✅ SALVAR TOKEN NO LOCALSTORAGE
+        localStorage.setItem('auth_token', response.token);
+        console.log('💾 Token salvo no localStorage com sucesso!');
+
+        // ✅ RETORNAR OBJETO COM USER E TOKEN
+        return {
+          user: response.user,
+          token: response.token
+        };
+      } else {
+        console.error('❌ Resposta de autenticação inválida:', response);
+        localStorage.removeItem('auth_token');
+        return null;
+      }
     } catch (error) {
-      console.error('Authentication error:', error);
+      console.error('❌ Erro na autenticação:', error);
+      localStorage.removeItem('auth_token');
       return null;
     }
   }
-
   // ==================== OPERAÇÕES COM IMAGENS ====================
 
   async uploadUserImage(userId: number, imageBase64: string): Promise<ImageOperationResponse> {
