@@ -733,6 +733,52 @@ class DatabaseService {
     }
   }
 
+
+  // services/database-service.tsx - ATUALIZAR MÉTODO
+
+  async checkForNewEntries(lastCheck: string, lastChangeCount: number = 0): Promise<{
+    has_changes: boolean;
+    last_change: string;
+    change_count: number;
+    success: boolean;
+  }> {
+    try {
+      const response = await fetch(
+        `${this.apiBaseUrl}/check-new-entries?last_check=${lastCheck}&last_change_count=${lastChangeCount}`
+      );
+
+      if (!response.ok) {
+        throw new Error('Erro ao verificar novas entradas');
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('❌ Erro ao verificar novas entradas:', error);
+      return {
+        has_changes: false,
+        last_change: new Date().toISOString(),
+        change_count: lastChangeCount,
+        success: false
+      };
+    }
+  }
+
+  async getRecentEntries(limit: number = 10): Promise<LogEntrada[]> {
+    try {
+      const response = await fetch(`${this.apiBaseUrl}/recent-entries?limit=${limit}`);
+
+      if (!response.ok) {
+        throw new Error('Erro ao buscar entradas recentes');
+      }
+
+      const data = await response.json();
+      return data.entries || [];
+    } catch (error) {
+      console.error('❌ Erro ao buscar entradas recentes:', error);
+      return [];
+    }
+  }
+
   // ==================== LOG AÇÃO ====================
 
   async getActionLogs(

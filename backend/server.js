@@ -19,34 +19,6 @@ const pool = new Pool({
   port: process.env.PGPORT,
 });
 
-// ✅ CORRIGIDO: Verificar se o arquivo existe antes de importar
-let webSocketServer = null;
-
-console.log('🔄 Inicializando WebSocket Server...');
-
-try {
-  // Verificar se o arquivo existe fisicamente
-  const websocketPath = path.join(__dirname, 'websocket-server.js');
-  if (fs.existsSync(websocketPath)) {
-    console.log('✅ Arquivo websocket-server.js encontrado');
-
-    const WebSocketServer = require('./websocket-server');
-    console.log('✅ Módulo WebSocketServer carregado');
-
-    // Inicializar WebSocket Server
-    webSocketServer = new WebSocketServer(5001);
-    console.log('🎯 WebSocket Server inicializado na porta 5001');
-  } else {
-    console.log('❌ Arquivo websocket-server.js não encontrado em:', websocketPath);
-  }
-} catch (error) {
-  console.error('❌ Erro ao inicializar WebSocket Server:', error.message);
-  if (error.code === 'MODULE_NOT_FOUND') {
-    console.log('📦 Instale as dependências: npm install ws jsonwebtoken');
-  }
-  webSocketServer = null;
-}
-
 // ==================== CONFIGURAÇÃO MULTER ====================
 
 // Criar pasta assets se não existir
@@ -72,9 +44,8 @@ const upload = multer({
   }
 });
 
-// ==================== MIDDLEWARES (PRIMEIRO!) ====================
+// ==================== MIDDLEWARES ====================
 
-// ✅ CORREÇÃO: Middlewares DEVEM vir ANTES das rotas
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -86,68 +57,85 @@ app.use((req, res, next) => {
   next();
 });
 
-// ==================== WEBSOCKET ENTRYLOGS (AGORA DEPOIS DOS MIDDLEWARES) ====================
+// ==================== NOVOS ENDPOINTS PARA POLLING ====================
 
-app.post('/api/register-entry', async (req, res) => {
-  console.log('🎯 ROTA /api/register-entry CHAMADA! Body:', req.body);
-
-  const client = await pool.connect();
+app.get('/api/check-new-entries', async (req, res) => {
   try {
-    await client.query('BEGIN');
+    const { last_check, last_change_count } = req.query;
 
-    const { usuario_id, identificador, nome, tipo, periodo, data_entrada, horario, controle } = req.body;
-
-    console.log('📝 Registrando entrada/saída:', { usuario_id, identificador, nome, tipo, controle });
-
-    // Inserir registro na tabela log_entrada
-    const result = await client.query(
-      `INSERT INTO log_entrada 
-       (usuario_id, identificador, nome, tipo, periodo, data_entrada, horario, controle) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
-       RETURNING *`,
-      [usuario_id, identificador, nome, tipo, periodo, data_entrada, horario, controle]
+    // Buscar informações da tabela de controle
+    const result = await pool.query(
+      `SELECT last_change, change_count 
+       FROM system_changes 
+       WHERE table_name = 'log_entrada'`
     );
 
-    const newEntry = result.rows[0];
-
-    await client.query('COMMIT');
-
-    // ✅ NOTIFICAR TODOS OS CLIENTES WEBSOCKET (se disponível)
-    if (webSocketServer) {
-      webSocketServer.broadcastNewEntry(newEntry);
-      console.log('✅ Registro criado e notificado via WebSocket:', newEntry.id);
-    } else {
-      console.log('✅ Registro criado (WebSocket não disponível):', newEntry.id);
+    if (result.rows.length === 0) {
+      return res.json({
+        success: true,
+        has_changes: false,
+        last_change: new Date().toISOString(),
+        change_count: 0
+      });
     }
+
+    const systemData = result.rows[0];
+    const lastChangeTime = systemData.last_change;
+    const currentChangeCount = parseInt(systemData.change_count) || 0;
+    const lastChangeCount = parseInt(last_change_count) || 0;
+
+    // ✅ DETECTAR MUDANÇAS PELA CONTAGEM (MAIS CONFIÁVEL)
+    const hasChanges = currentChangeCount > lastChangeCount;
+
+    console.log('🔍 Verificando mudanças:', {
+      lastChangeCount,
+      currentChangeCount,
+      hasChanges,
+      lastChangeTime
+    });
 
     res.json({
       success: true,
-      message: controle ? 'Saída registrada com sucesso' : 'Entrada registrada com sucesso',
-      data: newEntry
+      has_changes: hasChanges,
+      last_change: lastChangeTime,
+      change_count: currentChangeCount,
+      current_time: new Date().toISOString()
     });
 
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('❌ Erro ao registrar entrada/saída:', error);
+    console.error('❌ Erro ao verificar novas entradas:', error);
     res.status(500).json({
       success: false,
-      message: 'Erro ao registrar entrada/saída'
+      error: 'Erro ao verificar novas entradas'
     });
-  } finally {
-    client.release();
   }
 });
+// Endpoint otimizado para buscar apenas dados recentes
+app.get('/api/recent-entries', async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
 
-// ==================== WEBSOCKET STATUS ====================
+    const result = await pool.query(
+      `SELECT le.*, u.nome as usuario_nome
+       FROM log_entrada le
+       INNER JOIN usuario u ON le.usuario_id = u.id
+       WHERE le.data_entrada = CURRENT_DATE
+       ORDER BY le.created_at DESC
+       LIMIT $1`,
+      [parseInt(limit)]
+    );
 
-app.get('/api/websocket-status', (req, res) => {
-  if (webSocketServer) {
-    res.json(webSocketServer.getStatus());
-  } else {
     res.json({
-      port: null,
-      clientsConnected: 0,
-      status: 'NOT_AVAILABLE'
+      success: true,
+      entries: result.rows,
+      total: result.rows.length,
+      last_updated: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Erro ao buscar entradas recentes:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro ao buscar entradas recentes'
     });
   }
 });
@@ -355,7 +343,7 @@ app.post('/api/auth/login', async (req, res) => {
     return res.json({
       success: true,
       user,
-      token, // ✅ TOKEN INCLUÍDO NA RESPOSTA
+      token,
       message: 'Login realizado com sucesso'
     });
 
@@ -366,6 +354,43 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // ==================== USUÁRIOS ====================
+
+app.get('/api/users', async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        id, 
+        nome, 
+        tipo, 
+        identificador, 
+        created_at, 
+        updated_at,
+        imagem_path,
+        CASE 
+          WHEN imagem_path IS NOT NULL THEN true
+          ELSE false 
+        END as tem_imagem
+      FROM usuario 
+      ORDER BY nome
+    `;
+
+    const result = await pool.query(query);
+
+    const users = result.rows.map(user => ({
+      ...user,
+      imagem_url: user.imagem_path ? `http://localhost:${port}/${user.imagem_path}` : null
+    }));
+
+    res.json({
+      success: true,
+      users: users
+    });
+
+  } catch (error) {
+    console.error('Get users error:', error);
+    res.status(500).json({ error: 'Erro ao buscar usuários' });
+  }
+});
 
 app.get('/api/users/:id', async (req, res) => {
   try {
@@ -1035,7 +1060,7 @@ app.post('/api/catraca/iniciar-cadastro', async (req, res) => {
   } catch (error) {
     console.error('❌ Erro no cadastro de biometria:', error);
 
-    // Registrar log de erro - CORRIGIDO: Agora verificamos se user_id existe
+    // Registrar log de erro
     if (req.body.user_id) {
       await client.query(
         `INSERT INTO log (id_usuario, identificador, acao, status, detalhes, nome_usuario)
@@ -1044,7 +1069,6 @@ app.post('/api/catraca/iniciar-cadastro', async (req, res) => {
         `Falha: ${error.message}`, req.body.nome]
       );
     } else {
-      // Fallback: log sem id_usuario se não disponível
       await client.query(
         `INSERT INTO log (identificador, acao, status, detalhes, nome_usuario)
          VALUES ($1, $2, $3, $4, $5)`,
@@ -1091,7 +1115,7 @@ app.post('/api/users/com-biometria', upload.single('image'), async (req, res) =>
       'INSERT INTO usuario (nome, tipo, identificador) VALUES ($1, $2, $3) RETURNING id',
       [nome, tipo, identificador]
     );
-    userId = rows[0].id; // Salvar o userId para usar no catch se necessário
+    userId = rows[0].id;
 
     console.log(`✅ Usuário criado com ID: ${userId}`);
 
@@ -1137,7 +1161,7 @@ app.post('/api/users/com-biometria', upload.single('image'), async (req, res) =>
         identificador: identificador,
         nome: nome
       }),
-      timeout: 60000 // 60 segundos timeout
+      timeout: 60000
     });
 
     if (!catracaResponse.ok) {
@@ -1162,7 +1186,7 @@ app.post('/api/users/com-biometria', upload.single('image'), async (req, res) =>
     // 6. Commit de TUDO
     await client.query('COMMIT');
 
-    // 7. Log de sucesso - AGORA COM userId VÁLIDO
+    // 7. Log de sucesso
     await client.query(
       `INSERT INTO log (id_usuario, identificador, acao, status, detalhes, nome_usuario)
        VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -1183,9 +1207,8 @@ app.post('/api/users/com-biometria', upload.single('image'), async (req, res) =>
     await client.query('ROLLBACK');
     console.error('❌ Erro ao criar usuário com biometria:', error);
 
-    // Log de erro - CORRIGIDO: Agora temos userId se o usuário foi criado
+    // Log de erro
     if (userId) {
-      // Se o usuário foi criado mas a biometria falhou
       await client.query(
         `INSERT INTO log (id_usuario, identificador, acao, status, detalhes, nome_usuario)
          VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -1193,11 +1216,9 @@ app.post('/api/users/com-biometria', upload.single('image'), async (req, res) =>
           `Falha na biometria: ${error.message}`, req.body.nome]
       );
 
-      // IMPORTANTE: Remover o usuário criado já que a biometria falhou
       await client.query('DELETE FROM usuario WHERE id = $1', [userId]);
       console.log(`🗑️ Usuário ${userId} removido devido a falha na biometria`);
     } else {
-      // Se nem o usuário foi criado (erro mais cedo)
       await pool.query(
         `INSERT INTO log (identificador, acao, status, detalhes, nome_usuario)
          VALUES ($1, $2, $3, $4, $5)`,
@@ -1220,36 +1241,6 @@ app.post('/api/users/com-biometria', upload.single('image'), async (req, res) =>
   }
 });
 
-// Endpoint para verificar status da catraca
-app.get('/api/catraca/status', async (req, res) => {
-  try {
-    const response = await fetch(`${CATRACA_API_URL}/status`, {
-      method: 'GET',
-      timeout: 5000
-    });
-
-    if (!response.ok) {
-      throw new Error(`Catraca offline - status: ${response.status}`);
-    }
-
-    const status = await response.json();
-    res.json({
-      success: true,
-      online: true,
-      modo: status.modo,
-      sensor: status.sensor_status
-    });
-
-  } catch (error) {
-    console.error('Erro ao verificar status da catraca:', error);
-    res.json({
-      success: false,
-      online: false,
-      error: error.message
-    });
-  }
-});
-
 // ==================== HEALTH CHECK ====================
 
 app.get('/api/health', async (req, res) => {
@@ -1266,7 +1257,7 @@ app.get('/api/health', async (req, res) => {
       assets_system: assetsExists ? 'Ativo' : 'Inativo',
       images_folder: usersImagesExists ? 'Pronto' : 'Não configurado',
       server_time: result.rows[0].server_time,
-      websocket_status: webSocketServer ? webSocketServer.getStatus() : { status: 'NOT_AVAILABLE' }
+      polling_system: 'ATIVO'
     });
   } catch (error) {
     console.error('Health check error:', error);
@@ -1306,14 +1297,15 @@ async function initializeDatabase() {
     const client = await pool.connect();
     await client.query('SELECT NOW()');
 
+    // Verificar/Adicionar coluna updated_at se necessário
     try {
-      await client.query('SELECT imagem_path FROM usuario LIMIT 1');
-      console.log('✅ Coluna imagem_path já existe');
+      await client.query('SELECT updated_at FROM log_entrada LIMIT 1');
+      console.log('✅ Coluna updated_at já existe');
     } catch (error) {
       if (error.code === '42703') {
-        console.log('🔄 Criando coluna imagem_path...');
-        await client.query('ALTER TABLE usuario ADD COLUMN imagem_path VARCHAR(255)');
-        console.log('✅ Coluna imagem_path criada com sucesso');
+        console.log('🔄 Criando coluna updated_at...');
+        await client.query('ALTER TABLE log_entrada ADD COLUMN updated_at TIMESTAMP DEFAULT NOW()');
+        console.log('✅ Coluna updated_at criada com sucesso');
       } else {
         throw error;
       }
@@ -1336,11 +1328,6 @@ async function startServer() {
     console.log(`📍 http://localhost:${port}/api`);
     console.log(`🖼️  Sistema de imagens: ARQUIVOS FÍSICOS`);
     console.log(`📁 Pasta: ${usersImagesDir}`);
-    if (webSocketServer) {
-      console.log(`🔌 WebSocket Server rodando na porta 5001`);
-    } else {
-      console.log(`⚠️  WebSocket Server não disponível`);
-    }
   });
 }
 
