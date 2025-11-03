@@ -57,6 +57,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
       }
     }
   };
+
   const filterUsers = (text: string) => {
     setSearchText(text);
 
@@ -65,11 +66,19 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
       return;
     }
 
-    const filtered = users.filter(
-      (u) =>
-        u.nome.toLowerCase().includes(text.toLowerCase()) ||
-        u.identificador.toString().includes(text)
-    );
+    const textLower = text.toLowerCase();
+    const filtered = users.filter((u) => {
+      const nomeMatch = u.nome?.toLowerCase().includes(textLower) || false;
+
+      let identificadorMatch = false;
+      if (u.identificador) {
+        const identificadorStr = String(u.identificador);
+        identificadorMatch = identificadorStr.toLowerCase().includes(textLower);
+      }
+
+      return nomeMatch || identificadorMatch;
+    });
+
     setFilteredUsers(filtered);
   };
 
@@ -132,7 +141,10 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
 
   // ✅ FUNÇÃO SIMPLIFICADA - USA has_fingerprint DIRETO DO USUÁRIO
   const getFingerprintIcon = (user: UsuarioCompleto) => {
-    if (user.has_fingerprint) {
+    if(user.tipo === 'ADMIN' || user.tipo === 'RH' || user.tipo === 'PORTARIA') {
+      return null;
+    }
+    else if (user.has_fingerprint) {
       return (
         <img
           src="/assets/images/right_finger.svg"
