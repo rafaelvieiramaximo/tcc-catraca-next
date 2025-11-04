@@ -110,7 +110,7 @@ app.get('/api/check-new-entries', async (req, res) => {
     });
   }
 });
-// Endpoint otimizado para buscar apenas dados recentes
+
 app.get('/api/recent-entries', async (req, res) => {
   try {
     const { limit = 10 } = req.query;
@@ -139,6 +139,52 @@ app.get('/api/recent-entries', async (req, res) => {
     });
   }
 });
+
+// ============= ENDPOINT DE STATUS DE BIOMETRIA =============
+
+app.get('/api/biometry', async (req, res) => {
+  try {
+    console.log('🔍 Consultando status da biometria na catraca...');
+
+    const response = await fetch('http://192.168.11.220:5000/api/biometry', {
+      method: 'GET',
+      timeout: 5000 // 5 segundos timeout
+    });
+
+    if (!response.ok) {
+      throw new Error(`Catraca retornou status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    console.log('📊 Status da biometria:', {
+      etapa: data.etapa,
+      mensagem: data.mensagem,
+      success: data.success
+    });
+
+    res.json({
+      success: true,
+      etapa: data.etapa,
+      mensagem: data.mensagem,
+      dados: data.dados,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao consultar status da biometria:', error.message);
+    
+    res.status(500).json({
+      success: false,
+      error: 'Catraca offline ou indisponível',
+      detalhes: error.message,
+      etapa: 'erro',
+      mensagem: 'Não foi possível conectar com a catraca',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 
 // ==================== ENDPOINT DE UPLOAD ====================
 

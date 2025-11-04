@@ -35,55 +35,233 @@ export default function AddUserModal({
     const [catracaStatus, setCatracaStatus] = useState<'online' | 'offline' | 'checking'>('checking');
     const [biometriaMensagem, setBiometriaMensagem] = useState<string>('');
     const [cadastrandoBiometria, setCadastrandoBiometria] = useState(false);
+    const [etapaAtual, setEtapaAtual] = useState<string>('');
 
     const [usuarioCriado, setUsuarioCriado] = useState<{ id: number, nome: string, identificador: string } | null>(null);
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const pollingRef = useRef<NodeJS.Timeout | null>(null);
+    const modalAtivoRef = useRef(false);
 
-    // Verificar status da catraca
-    const verificarStatusCatraca = async () => {
-        try {
-            setCatracaStatus('checking');
-            console.log('🔍 Verificando status da catraca...');
+    // ==================== SISTEMA MELHORADO DE POLLING ====================
 
-            const response = await fetch('/api/catraca/status');
+    const iniciarPollingBiometria = async () => {
+        console.log('🔄 Iniciando polling para status da biometria...');
+        
+        let tentativas = 0;
+        const maxTentativas = 180; // 3 minutos máximo (para múltiplas leituras)
 
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+        const poll = async () => {
+            // ✅ VERIFICAÇÃO CRÍTICA: Se o modal não está mais ativo, PARA TUDO
+            if (!modalAtivoRef.current) {
+                console.log('🛑 Polling interrompido - modal não está mais ativo');
+                return;
             }
 
-            const result = await response.json();
-            console.log('📨 Status da catraca:', result);
+            try {
+                tentativas++;
+                console.log(`🔍 Polling biometria - tentativa ${tentativas}`);
 
-            setCatracaStatus(result.online ? 'online' : 'offline');
+                const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
-            if (!result.online) {
-                setBiometriaMensagem('❌ Catraca offline - biometria indisponível');
-            } else {
-                if (!usuarioCriado && !userToEdit) {
-                    setBiometriaMensagem('✅ Catraca online - pronta para cadastro');
-                    setTimeout(() => setBiometriaMensagem(''), 3000);
+                const response = await fetch(`${API_BASE}/api/biometry`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                console.log('📊 Status completo da biometria:', result);
+
+                // ✅ VERIFICAÇÃO: Se modal ainda ativo antes de atualizar estado
+                if (modalAtivoRef.current && result.etapa && result.mensagem) {
+                    setEtapaAtual(result.etapa);
+                    setBiometriaMensagem(result.mensagem);
+                    
+                    // 🎯 CAPTURAR MENSAGENS ESPECÍFICAS DO FLUXO DE BIOMETRIA
+                    capturarMensagensEspecificas(result.etapa, result.mensagem, result.dados);
+                }
+
+                // ✅ CONDIÇÕES DE PARADA MELHORADAS
+                if (result.etapa === 'sucesso') {
+                    console.log('✅ Cadastro de biometria concluído com sucesso!');
+                    tratarSucessoBiometria(result.dados);
+                    
+                } else if (result.etapa === 'erro') {
+                    console.error('❌ Erro no cadastro de biometria:', result.mensagem);
+                    tratarErroBiometria(result.mensagem);
+                    
+                } else if (tentativas >= maxTentativas) {
+                    console.error('⏰ Timeout no cadastro de biometria');
+                    tratarTimeoutBiometria();
+                    
+                } else {
+                    // ✅ CONTINUAR POLLING - FLUXO NORMAL (aguardando leituras)
+                    if (modalAtivoRef.current) {
+                        pollingRef.current = setTimeout(poll, 800); // Polling mais rápido para capturar todas as mensagens
+                    }
+                }
+
+            } catch (error) {
+                console.error('❌ Erro no polling de biometria:', error);
+                
+                // ✅ VERIFICAR SE MODAL AINDA ESTÁ ATIVO ANTES DE TENTAR NOVAMENTE
+                if (modalAtivoRef.current && tentativas < maxTentativas) {
+                    pollingRef.current = setTimeout(poll, 2000);
+                } else if (modalAtivoRef.current) {
+                    tratarErroConexao();
                 }
             }
-        } catch (error) {
-            console.error('❌ Erro ao verificar status:', error);
-            setCatracaStatus('offline');
-            setBiometriaMensagem('❌ Erro ao conectar com a catraca');
+        };
+
+        // ✅ INICIAR POLLING APENAS SE MODAL ESTIVER ATIVO
+        if (modalAtivoRef.current) {
+            poll();
         }
     };
 
+    // 🎯 FUNÇÃO PARA CAPTURAR MENSAGENS ESPECÍFICAS DO FLUXO
+    const capturarMensagensEspecificas = (etapa: string, mensagem: string, dados: any) => {
+        console.log('🎯 Capturando mensagem específica:', { etapa, mensagem, dados });
+        
+        // 🖐️ MENSAGENS DE CAPTURA DE DIGITAIS
+        if (mensagem.includes('insira o dedo') || mensagem.includes('coloque o dedo')) {
+            setBiometriaMensagem(`👆 ${mensagem}`);
+        }
+        
+        // 🔄 MENSAGENS DE REPETIÇÃO
+        else if (mensagem.includes('novamente') || mensagem.includes('repetir') || mensagem.includes('outra vez')) {
+            setBiometriaMensagem(`🔄 ${mensagem}`);
+        }
+        
+        // 📸 MENSAGENS DE CAPTURA BEM-SUCEDIDA
+        else if (mensagem.includes('capturada') || mensagem.includes('lida') || mensagem.includes('sucesso')) {
+            setBiometriaMensagem(`✅ ${mensagem}`);
+        }
+        
+        // ⚠️ MENSAGENS DE ALERTA/AVISO
+        else if (mensagem.includes('aguarde') || mensagem.includes('processando') || mensagem.includes('verificando')) {
+            setBiometriaMensagem(`⏳ ${mensagem}`);
+        }
+        
+        // ❌ MENSAGENS DE ERRO ESPECÍFICAS
+        else if (mensagem.includes('erro') || mensagem.includes('falha') || mensagem.includes('inválida')) {
+            setBiometriaMensagem(`❌ ${mensagem}`);
+        }
+        
+        // 📊 INFORMAR POSIÇÃO/ETAPA ATUAL
+        else if (dados?.posicao || dados?.leitura_atual) {
+            const posicao = dados.posicao || dados.leitura_atual;
+            setBiometriaMensagem(`${mensagem} (Posição: ${posicao})`);
+        }
+    };
+
+    // ✅ TRATAMENTO DE SUCESSO
+    const tratarSucessoBiometria = async (dados: any) => {
+        pararPollingBiometria();
+        
+        if (!modalAtivoRef.current) {
+            console.log('🛑 Operação cancelada - modal fechado');
+            return;
+        }
+        
+        const posicao = dados?.posicao || 'N/A';
+        setBiometriaMensagem(`🎉 Biometria cadastrada com sucesso! Posição: ${posicao}`);
+        
+        // Registrar log de sucesso
+        if (usuarioCriado) {
+            await databaseService.createActionLog({
+                id_usuario: usuarioCriado.id,
+                identificador: usuarioCriado.identificador,
+                acao: 'CADASTRAR_BIOMETRIA',
+                status: 'SUCESSO',
+                detalhes: `Biometria cadastrada na posição ${posicao}`,
+                nome_usuario: usuarioCriado.nome
+            });
+        }
+
+        setCadastrandoBiometria(false);
+        
+        // Fechar modal após sucesso (apenas para novos usuários)
+        if (!userToEdit) {
+            setTimeout(() => {
+                if (modalAtivoRef.current) {
+                    onUserAdded();
+                    onClose();
+                }
+            }, 3000);
+        }
+    };
+
+    // ❌ TRATAMENTO DE ERRO
+    const tratarErroBiometria = async (mensagem: string) => {
+        pararPollingBiometria();
+        
+        if (modalAtivoRef.current) {
+            setBiometriaMensagem(`❌ ${mensagem || 'Erro no cadastro de biometria'}`);
+            setCadastrandoBiometria(false);
+
+            if (usuarioCriado) {
+                await databaseService.createActionLog({
+                    id_usuario: usuarioCriado.id,
+                    identificador: usuarioCriado.identificador,
+                    acao: 'CADASTRAR_BIOMETRIA',
+                    status: 'ERRO',
+                    detalhes: `Falha: ${mensagem}`,
+                    nome_usuario: usuarioCriado.nome
+                });
+            }
+        }
+    };
+
+    // ⏰ TRATAMENTO DE TIMEOUT
+    const tratarTimeoutBiometria = () => {
+        pararPollingBiometria();
+        
+        if (modalAtivoRef.current) {
+            setBiometriaMensagem('❌ Tempo limite excedido para cadastro de biometria');
+            setCadastrandoBiometria(false);
+        }
+    };
+
+    // 🔌 TRATAMENTO DE ERRO DE CONEXÃO
+    const tratarErroConexao = () => {
+        pararPollingBiometria();
+        
+        if (modalAtivoRef.current) {
+            setBiometriaMensagem('❌ Erro de conexão com a catraca');
+            setCadastrandoBiometria(false);
+        }
+    };
+
+    const pararPollingBiometria = () => {
+        console.log('🛑 Parando polling de biometria...');
+        if (pollingRef.current) {
+            clearTimeout(pollingRef.current);
+            pollingRef.current = null;
+        }
+    };
+
+    // ==================== CONTROLE DE ESTADO DO MODAL ====================
+
     useEffect(() => {
+        modalAtivoRef.current = visible;
+        console.log(`📱 Modal ${visible ? 'ABERTO' : 'FECHADO'}`);
+
         if (visible) {
             verificarStatusCatraca();
-            // Verificar a cada 30 segundos
             const interval = setInterval(verificarStatusCatraca, 30000);
-            return () => clearInterval(interval);
+            return () => {
+                clearInterval(interval);
+                pararPollingBiometria();
+            };
         } else {
             setBiometriaMensagem('');
             setCadastrandoBiometria(false);
-            // Resetar estado quando modal fechar
+            setEtapaAtual('');
+            pararPollingBiometria();
             setUsuarioCriado(null);
         }
 
@@ -94,6 +272,7 @@ export default function AddUserModal({
             if (previewUrl) {
                 URL.revokeObjectURL(previewUrl);
             }
+            pararPollingBiometria();
         };
     }, [visible]);
 
@@ -115,7 +294,6 @@ export default function AddUserModal({
             if (userToEdit.tem_imagem || userToEdit.imagem_path) {
                 loadUserImage(userToEdit);
             }
-            // Resetar estado de usuário criado quando for edição
             setUsuarioCriado(null);
         } else {
             console.log('🆕 Modo criação - resetando formulário');
@@ -129,7 +307,6 @@ export default function AddUserModal({
                 URL.revokeObjectURL(previewUrl);
             }
             setPreviewUrl(null);
-            // Resetar estado de usuário criado
             setUsuarioCriado(null);
         }
     }, [userToEdit, visible]);
@@ -217,7 +394,6 @@ export default function AddUserModal({
     };
 
     const handleSelectImage = () => {
-        // Bloquear se usuário já foi criado e está aguardando biometria
         if (usuarioCriado && !userToEdit) {
             return;
         }
@@ -251,7 +427,6 @@ export default function AddUserModal({
     };
 
     const handleRemoveImage = () => {
-        // Bloquear se usuário já foi criado e está aguardando biometria
         if (usuarioCriado && !userToEdit) {
             return;
         }
@@ -265,16 +440,22 @@ export default function AddUserModal({
         }
     };
 
+    // ==================== FUNÇÃO CADASTRAR BIOMETRIA MELHORADA ====================
+
     const cadastrarBiometria = async (userId: number, identificador: string, nome: string) => {
+        if (!modalAtivoRef.current) {
+            console.log('🛑 Cadastro de biometria cancelado - modal fechado');
+            return false;
+        }
+
         try {
             setCadastrandoBiometria(true);
             setBiometriaMensagem('🔄 Iniciando cadastro de biometria...');
+            setEtapaAtual('iniciando');
 
             console.log('📤 Enviando dados para cadastro de biometria:', { userId, identificador, nome });
 
-            const API_BASE = process.env.NODE_ENV === 'development'
-                ? 'http://localhost:3001'
-                : '';
+            const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
             const response = await fetch(`${API_BASE}/api/catraca/iniciar-cadastro`, {
                 method: 'POST',
@@ -291,25 +472,19 @@ export default function AddUserModal({
             const result = await response.json();
             console.log('📨 Resposta do cadastro de biometria:', result);
 
+            if (!modalAtivoRef.current) {
+                console.log('🛑 Cadastro de biometria interrompido - modal fechado');
+                return false;
+            }
+
             if (result.success) {
-                setBiometriaMensagem(`✅ Biometria cadastrada com sucesso! Posição: ${result.posicao}`);
-
-                await databaseService.createActionLog({
-                    id_usuario: userId,
-                    identificador: identificador,
-                    acao: 'CADASTRAR_BIOMETRIA',
-                    status: 'SUCESSO',
-                    detalhes: `Biometria cadastrada na posição ${result.posicao}`,
-                    nome_usuario: nome
-                });
-
-                if (!userToEdit) {
-                    setTimeout(() => {
-                        onUserAdded();
-                        onClose();
-                    }, 2000);
+                setBiometriaMensagem('🔄 Conectando com a catraca... Aguarde as instruções...');
+                
+                // 🎯 INICIAR POLLING PARA CAPTURAR TODAS AS ETAPAS
+                if (modalAtivoRef.current) {
+                    iniciarPollingBiometria();
                 }
-
+                
                 return true;
             } else {
                 let mensagemErro = result.error;
@@ -317,25 +492,30 @@ export default function AddUserModal({
                     mensagemErro = '❌ Sensor biométrico não está disponível. Verifique a conexão da catraca.';
                 }
 
-                setBiometriaMensagem(`❌ ${mensagemErro}`);
+                if (modalAtivoRef.current) {
+                    setBiometriaMensagem(`❌ ${mensagemErro}`);
+                    setCadastrandoBiometria(false);
 
-                await databaseService.createActionLog({
-                    id_usuario: userId,
-                    identificador: identificador,
-                    acao: 'CADASTRAR_BIOMETRIA',
-                    status: 'ERRO',
-                    detalhes: `Falha: ${result.error}`,
-                    nome_usuario: nome
-                });
+                    await databaseService.createActionLog({
+                        id_usuario: userId,
+                        identificador: identificador,
+                        acao: 'CADASTRAR_BIOMETRIA',
+                        status: 'ERRO',
+                        detalhes: `Falha: ${result.error}`,
+                        nome_usuario: nome
+                    });
+                }
 
                 return false;
             }
         } catch (error: any) {
             console.error('❌ Erro no cadastro de biometria:', error);
-            setBiometriaMensagem(`❌ Erro de conexão: ${error.message}`);
+            
+            if (modalAtivoRef.current) {
+                setBiometriaMensagem(`❌ Erro de conexão: ${error.message}`);
+                setCadastrandoBiometria(false);
+            }
             return false;
-        } finally {
-            setCadastrandoBiometria(false);
         }
     };
 
@@ -443,49 +623,88 @@ export default function AddUserModal({
         }
 
         if (userToEdit) {
-            const sucesso = await cadastrarBiometria(
+            await cadastrarBiometria(
                 userToEdit.id,
                 formData.identificador,
                 formData.nome
             );
-
-            if (sucesso) {
-                setTimeout(() => {
-                    setBiometriaMensagem('');
-                }, 5000);
-            }
         } else if (usuarioCriado) {
-            const sucesso = await cadastrarBiometria(
+            await cadastrarBiometria(
                 usuarioCriado.id,
                 usuarioCriado.identificador,
                 usuarioCriado.nome
             );
-
-            if (sucesso) {
-            }
         } else {
             setBiometriaMensagem('❌ Crie o usuário primeiro antes de cadastrar a biometria');
         }
     };
 
     const handleClose = () => {
+        console.log('🚪 Fechando modal - iniciando limpeza...');
+        
+        modalAtivoRef.current = false;
+        pararPollingBiometria();
+        
         if (cameraActive) {
             stopCamera();
         }
         if (previewUrl) {
             URL.revokeObjectURL(previewUrl);
         }
+        
         setImagemFile(null);
         setPreviewUrl(null);
         setBiometriaMensagem('');
         setCadastrandoBiometria(false);
+        setEtapaAtual('');
         setUsuarioCriado(null);
+        
         onClose();
     };
+
     const handleCloseWithoutBiometry = () => {
+        console.log('🚪 Fechando sem biometria - iniciando limpeza...');
+        
+        modalAtivoRef.current = false;
+        pararPollingBiometria();
         setUsuarioCriado(null);
+        setBiometriaMensagem('');
+        setEtapaAtual('');
         onUserAdded();
         onClose();
+    };
+
+    const verificarStatusCatraca = async () => {
+        try {
+            setCatracaStatus('checking');
+            console.log('🔍 Verificando status da catraca...');
+
+            const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+
+            const response = await fetch(`${API_BASE}/api/catraca/status`);
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            console.log('📨 Status da catraca:', result);
+
+            setCatracaStatus(result.online ? 'online' : 'offline');
+
+            if (!result.online) {
+                setBiometriaMensagem('❌ Catraca offline - biometria indisponível');
+            } else {
+                if (!usuarioCriado && !userToEdit) {
+                    setBiometriaMensagem('✅ Catraca online - pronta para cadastro');
+                    setTimeout(() => setBiometriaMensagem(''), 3000);
+                }
+            }
+        } catch (error) {
+            console.error('❌ Erro ao verificar status:', error);
+            setCatracaStatus('offline');
+            setBiometriaMensagem('❌ Erro ao conectar com a catraca');
+        }
     };
 
     if (!visible) return null;
@@ -532,11 +751,23 @@ export default function AddUserModal({
 
                         {biometriaMensagem && (
                             <div className={`text-sm p-2 rounded mt-2 ${biometriaMensagem.includes('❌') ? 'bg-red-100 text-red-700 border border-red-200' :
-                                biometriaMensagem.includes('✅') ? 'bg-green-100 text-green-700 border border-green-200' :
-                                    biometriaMensagem.includes('🔄') ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-                                        'bg-gray-100 text-gray-700 border border-gray-200'
+                                biometriaMensagem.includes('✅') || biometriaMensagem.includes('🎉') ? 'bg-green-100 text-green-700 border border-green-200' :
+                                biometriaMensagem.includes('🔄') || biometriaMensagem.includes('⏳') ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                                biometriaMensagem.includes('👆') ? 'bg-yellow-100 text-yellow-700 border border-yellow-200' :
+                                'bg-gray-100 text-gray-700 border border-gray-200'
                                 }`}>
-                                {biometriaMensagem}
+                                <div className="font-medium">{etapaAtual || 'Status'}</div>
+                                <div className="mt-1">{biometriaMensagem}</div>
+                                {cadastrandoBiometria && (
+                                    <div className="mt-2">
+                                        <div className="w-full bg-gray-200 rounded-full h-1.5">
+                                            <div className="bg-blue-600 h-1.5 rounded-full animate-pulse"></div>
+                                        </div>
+                                        <div className="text-xs text-gray-500 mt-1 text-center">
+                                            Aguardando leituras da digital...
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -828,6 +1059,5 @@ export default function AddUserModal({
                 </div>
             </div>
         </div>
-
     );
 }

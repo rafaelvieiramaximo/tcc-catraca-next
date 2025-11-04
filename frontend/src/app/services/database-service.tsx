@@ -123,6 +123,28 @@ export interface FingerprintStatusResponse {
   users_without_fingerprint: number;
 }
 
+export interface StatusBiometria {
+  success: boolean;
+  etapa: string;
+  mensagem: string;
+  dados?: any;
+  timestamp: string;
+  error?: string;
+}
+
+export interface CadastroBiometriaRequest {
+  user_id: number;
+  identificador: string;
+  nome: string;
+}
+
+export interface CadastroBiometriaResponse {
+  success: boolean;
+  message: string;
+  posicao?: number;
+  error?: string;
+}
+
 // Classe principal do serviço de banco de dados
 class DatabaseService {
   private baseUrl: string;
@@ -286,6 +308,9 @@ class DatabaseService {
       };
     }
   }
+
+  // ==================== NOVAS FUNÇÕES PARA DIGITAIS ====================
+  
 
   // ==================== FUNÇÕES EXISTENTES PARA IMAGENS ====================
 
@@ -733,9 +758,6 @@ class DatabaseService {
     }
   }
 
-
-  // services/database-service.tsx - ATUALIZAR MÉTODO
-
   async checkForNewEntries(lastCheck: string, lastChangeCount: number = 0): Promise<{
     has_changes: boolean;
     last_change: string;
@@ -878,9 +900,6 @@ export const databaseService = new DatabaseService();
 
 // ==================== HOOKS PARA DIGITAIS ====================
 
-/**
- * Hook para estatísticas de fingerprints
- */
 export const useFingerprintStats = () => {
   const [stats, setStats] = useState<{
     total_users: number;
@@ -911,9 +930,6 @@ export const useFingerprintStats = () => {
   return { stats, loading, error, refetch: loadStats };
 };
 
-/**
- * Hook para status de digital de um usuário específico
- */
 export const useUserFingerprintStatus = (userId: number) => {
   const [data, setData] = useState<{
     has_fingerprint: boolean;

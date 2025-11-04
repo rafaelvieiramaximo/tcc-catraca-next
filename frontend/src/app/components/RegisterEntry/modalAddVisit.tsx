@@ -16,33 +16,146 @@ export default function AddVisitorModal({
 }: AddVisitorModalProps) {
     const [formData, setFormData] = useState({
         nome: "",
-        identificador: "", // RG do visitante
+        identificador: "",
     });
     const [imagemFile, setImagemFile] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
-    const [imageLoading, setImageLoading] = useState(false);
     const [cameraActive, setCameraActive] = useState(false);
     const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
 
     const [catracaStatus, setCatracaStatus] = useState<'online' | 'offline' | 'checking'>('checking');
     const [biometriaMensagem, setBiometriaMensagem] = useState<string>('');
     const [cadastrandoBiometria, setCadastrandoBiometria] = useState(false);
+    const [etapaAtual, setEtapaAtual] = useState<string>('');
     
-    // Estado para controlar se o visitante já foi criado
     const [visitanteCriado, setVisitanteCriado] = useState<{id: number, nome: string, identificador: string} | null>(null);
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const pollingRef = useRef<NodeJS.Timeout | null>(null);
+    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    // Verificar status da catraca
+    const iniciarPollingBiometria = async () => {
+        console.log('🔄 Iniciando polling para status da biometria...');
+        
+        let tentativas = 0;
+        const maxTentativas = 120;
+
+        const poll = async () => {
+            try {
+                tentativas++;
+                console.log(`🔍 Polling biometria - tentativa ${tentativas}`);
+
+                const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+
+                const response = await fetch(`${API_BASE}/api/biometry`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                console.log('📊 Status da biometria:', result);
+
+                if (result.etapa && result.mensagem) {
+                    setEtapaAtual(result.etapa);
+                    setBiometriaMensagem(result.mensagem);
+                }
+
+                if (result.etapa === 'sucesso') {
+                    console.log('✅ Cadastro de biometria concluído com sucesso!');
+                    pararPollingBiometria();
+                    
+                    setTimeout(async () => {
+                        const statusFinal = await fetch(`${API_BASE}/api/biometry`);
+                        const dadosFinais = await statusFinal.json();
+                        
+                        const posicao = dadosFinais.dados?.posicao || 'N/A';
+                        setBiometriaMensagem(`✅ Biometria cadastrada com sucesso! Posição: ${posicao}`);
+                        
+                        if (visitanteCriado) {
+                            await databaseService.createActionLog({
+                                id_usuario: visitanteCriado.id,
+                                identificador: visitanteCriado.identificador,
+                                acao: 'CADASTRAR_BIOMETRIA_VISITANTE',
+                                status: 'SUCESSO',
+                                detalhes: `Biometria de visitante cadastrada`,
+                                nome_usuario: visitanteCriado.nome
+                            });
+                        }
+
+                        setCadastrandoBiometria(false);
+                        
+                        setTimeout(() => {
+                            onVisitorAdded();
+                            onClose();
+                        }, 3000);
+
+                    }, 1000);
+
+                } else if (result.etapa === 'erro') {
+                    console.error('❌ Erro no cadastro de biometria:', result.mensagem);
+                    pararPollingBiometria();
+                    setBiometriaMensagem(`❌ ${result.mensagem || 'Erro no cadastro de biometria'}`);
+                    setCadastrandoBiometria(false);
+
+                    if (visitanteCriado) {
+                        await databaseService.createActionLog({
+                            id_usuario: visitanteCriado.id,
+                            identificador: visitanteCriado.identificador,
+                            acao: 'CADASTRAR_BIOMETRIA_VISITANTE',
+                            status: 'ERRO',
+                            detalhes: `Falha: ${result.mensagem}`,
+                            nome_usuario: visitanteCriado.nome
+                        });
+                    }
+                } else if (tentativas >= maxTentativas) {
+                    console.error('⏰ Timeout no cadastro de biometria');
+                    pararPollingBiometria();
+                    setBiometriaMensagem('❌ Tempo limite excedido para cadastro de biometria');
+                    setCadastrandoBiometria(false);
+                } else {
+                    // Continuar polling
+                    pollingRef.current = setTimeout(poll, 1000);
+                }
+
+            } catch (error) {
+                console.error('❌ Erro no polling de biometria:', error);
+                
+                if (tentativas < maxTentativas) {
+                    pollingRef.current = setTimeout(poll, 2000);
+                } else {
+                    pararPollingBiometria();
+                    setBiometriaMensagem('❌ Erro de conexão com a catraca');
+                    setCadastrandoBiometria(false);
+                }
+            }
+        };
+
+        poll();
+    };
+
+    const pararPollingBiometria = () => {
+        if (pollingRef.current) {
+            clearTimeout(pollingRef.current);
+            pollingRef.current = null;
+        }
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+        }
+    };
+
     const verificarStatusCatraca = async () => {
         try {
             setCatracaStatus('checking');
             console.log('🔍 Verificando status da catraca...');
 
-            const response = await fetch('/api/catraca/status');
+            const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+
+            const response = await fetch(`${API_BASE}/api/catraca/status`);
 
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -71,13 +184,16 @@ export default function AddVisitorModal({
     useEffect(() => {
         if (visible) {
             verificarStatusCatraca();
-            // Verificar a cada 30 segundos
             const interval = setInterval(verificarStatusCatraca, 30000);
-            return () => clearInterval(interval);
+            return () => {
+                clearInterval(interval);
+                pararPollingBiometria();
+            };
         } else {
             setBiometriaMensagem('');
             setCadastrandoBiometria(false);
-            // Resetar estado quando modal fechar
+            setEtapaAtual('');
+            pararPollingBiometria();
             setVisitanteCriado(null);
         }
 
@@ -88,10 +204,10 @@ export default function AddVisitorModal({
             if (previewUrl) {
                 URL.revokeObjectURL(previewUrl);
             }
+            pararPollingBiometria();
         };
     }, [visible]);
 
-    // Resetar form quando modal abrir
     useEffect(() => {
         if (visible) {
             setFormData({
@@ -104,10 +220,11 @@ export default function AddVisitorModal({
             }
             setPreviewUrl(null);
             setVisitanteCriado(null);
+            setEtapaAtual('');
+            setBiometriaMensagem('');
         }
     }, [visible]);
 
-    // Funções para câmera (iguais ao AddUserModal)
     const startCamera = async () => {
         try {
             setCameraActive(true);
@@ -173,7 +290,6 @@ export default function AddVisitorModal({
     };
 
     const handleSelectImage = () => {
-        // Bloquear se visitante já foi criado
         if (visitanteCriado) {
             return;
         }
@@ -207,7 +323,6 @@ export default function AddVisitorModal({
     };
 
     const handleRemoveImage = () => {
-        // Bloquear se visitante já foi criado
         if (visitanteCriado) {
             return;
         }
@@ -225,12 +340,11 @@ export default function AddVisitorModal({
         try {
             setCadastrandoBiometria(true);
             setBiometriaMensagem('🔄 Iniciando cadastro de biometria...');
+            setEtapaAtual('iniciando');
 
             console.log('📤 Enviando dados para cadastro de biometria:', { userId, identificador, nome });
 
-            const API_BASE = process.env.NODE_ENV === 'development'
-                ? 'http://localhost:3001'
-                : '';
+            const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
             const response = await fetch(`${API_BASE}/api/catraca/iniciar-cadastro`, {
                 method: 'POST',
@@ -248,22 +362,10 @@ export default function AddVisitorModal({
             console.log('📨 Resposta do cadastro de biometria:', result);
 
             if (result.success) {
-                setBiometriaMensagem(`✅ Biometria cadastrada com sucesso! Posição: ${result.posicao}`);
-
-                await databaseService.createActionLog({
-                    id_usuario: userId,
-                    identificador: identificador,
-                    acao: 'CADASTRAR_BIOMETRIA_VISITANTE',
-                    status: 'SUCESSO',
-                    detalhes: `Biometria de visitante cadastrada na posição ${result.posicao}`,
-                    nome_usuario: nome
-                });
-
-                setTimeout(() => {
-                    onVisitorAdded();
-                    onClose();
-                }, 2000);
-
+                setBiometriaMensagem('🔄 Conectando com a catraca...');
+                
+                iniciarPollingBiometria();
+                
                 return true;
             } else {
                 let mensagemErro = result.error;
@@ -272,6 +374,7 @@ export default function AddVisitorModal({
                 }
 
                 setBiometriaMensagem(`❌ ${mensagemErro}`);
+                setCadastrandoBiometria(false);
 
                 await databaseService.createActionLog({
                     id_usuario: userId,
@@ -287,9 +390,8 @@ export default function AddVisitorModal({
         } catch (error: any) {
             console.error('❌ Erro no cadastro de biometria:', error);
             setBiometriaMensagem(`❌ Erro de conexão: ${error.message}`);
-            return false;
-        } finally {
             setCadastrandoBiometria(false);
+            return false;
         }
     };
 
@@ -304,13 +406,11 @@ export default function AddVisitorModal({
             return;
         }
 
-        // ✅ VALIDAÇÃO DO RG - Formato brasileiro comum (8-9 dígitos)
         if (!/^\d{8,9}$/.test(formData.identificador)) {
             alert("O RG deve conter 8 ou 9 dígitos numéricos (sem pontos ou traços).");
             return;
         }
 
-        // ✅ VALIDAÇÃO DO NOME - Apenas letras e espaços
         if (!/^[a-zA-ZÀ-ÿ\s]{2,}$/.test(formData.nome)) {
             alert("Por favor, insira um nome válido (apenas letras e espaços).");
             return;
@@ -319,7 +419,6 @@ export default function AddVisitorModal({
         try {
             setLoading(true);
 
-            // Criar visitante
             const result = await databaseService.createUser({
                 nome: formData.nome.trim(),
                 tipo: 'VISITANTE',
@@ -327,7 +426,6 @@ export default function AddVisitorModal({
             });
 
             if (result.success && result.userId) {
-                // Fazer upload da imagem, se houver
                 if (imagemFile) {
                     await databaseService.processAndUploadUserImage(
                         result.userId,
@@ -377,21 +475,18 @@ export default function AddVisitorModal({
         }
 
         if (visitanteCriado) {
-            const sucesso = await cadastrarBiometria(
+            await cadastrarBiometria(
                 visitanteCriado.id,
                 visitanteCriado.identificador,
                 visitanteCriado.nome
             );
-
-            if (sucesso) {
-                // O modal será fechado automaticamente após o sucesso
-            }
         } else {
             setBiometriaMensagem('❌ Crie o visitante primeiro antes de cadastrar a biometria');
         }
     };
 
     const handleClose = () => {
+        pararPollingBiometria();
         if (cameraActive) {
             stopCamera();
         }
@@ -402,12 +497,16 @@ export default function AddVisitorModal({
         setPreviewUrl(null);
         setBiometriaMensagem('');
         setCadastrandoBiometria(false);
+        setEtapaAtual('');
         setVisitanteCriado(null);
         onClose();
     };
 
     const handleCloseWithoutBiometry = () => {
+        pararPollingBiometria();
         setVisitanteCriado(null);
+        setBiometriaMensagem('');
+        setEtapaAtual('');
         onVisitorAdded();
         onClose();
     };
@@ -461,7 +560,15 @@ export default function AddVisitorModal({
                                 biometriaMensagem.includes('🔄') ? 'bg-blue-100 text-blue-700 border border-blue-200' :
                                 'bg-gray-100 text-gray-700 border border-gray-200'
                             }`}>
-                                {biometriaMensagem}
+                                <div className="font-medium">{etapaAtual || 'Status'}</div>
+                                <div>{biometriaMensagem}</div>
+                                {cadastrandoBiometria && (
+                                    <div className="mt-2">
+                                        <div className="w-full bg-gray-200 rounded-full h-1.5">
+                                            <div className="bg-blue-600 h-1.5 rounded-full animate-pulse"></div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -603,7 +710,6 @@ export default function AddVisitorModal({
                             value={formData.nome}
                             onChange={(e) => {
                                 if (camposBloqueados) return;
-                                // ✅ MÁSCARA: Apenas letras e espaços
                                 const value = e.target.value.replace(/[^a-zA-ZÀ-ÿ\s]/g, '');
                                 setFormData(prev => ({ ...prev, nome: value }));
                             }}
@@ -628,7 +734,6 @@ export default function AddVisitorModal({
                             value={formData.identificador}
                             onChange={(e) => {
                                 if (camposBloqueados) return;
-                                // ✅ MÁSCARA: Apenas números (8-9 dígitos)
                                 const value = e.target.value.replace(/\D/g, "").slice(0, 9);
                                 setFormData(prev => ({ ...prev, identificador: value }));
                             }}
