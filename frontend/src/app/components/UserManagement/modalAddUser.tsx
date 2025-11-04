@@ -49,7 +49,7 @@ export default function AddUserModal({
 
     const iniciarPollingBiometria = async () => {
         console.log('🔄 Iniciando polling para status da biometria...');
-        
+
         let tentativas = 0;
         const maxTentativas = 180; // 3 minutos máximo (para múltiplas leituras)
 
@@ -67,7 +67,7 @@ export default function AddUserModal({
                 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
                 const response = await fetch(`${API_BASE}/api/biometry`);
-                
+
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
@@ -79,7 +79,7 @@ export default function AddUserModal({
                 if (modalAtivoRef.current && result.etapa && result.mensagem) {
                     setEtapaAtual(result.etapa);
                     setBiometriaMensagem(result.mensagem);
-                    
+
                     // 🎯 CAPTURAR MENSAGENS ESPECÍFICAS DO FLUXO DE BIOMETRIA
                     capturarMensagensEspecificas(result.etapa, result.mensagem, result.dados);
                 }
@@ -88,15 +88,15 @@ export default function AddUserModal({
                 if (result.etapa === 'sucesso') {
                     console.log('✅ Cadastro de biometria concluído com sucesso!');
                     tratarSucessoBiometria(result.dados);
-                    
+
                 } else if (result.etapa === 'erro') {
                     console.error('❌ Erro no cadastro de biometria:', result.mensagem);
                     tratarErroBiometria(result.mensagem);
-                    
+
                 } else if (tentativas >= maxTentativas) {
                     console.error('⏰ Timeout no cadastro de biometria');
                     tratarTimeoutBiometria();
-                    
+
                 } else {
                     // ✅ CONTINUAR POLLING - FLUXO NORMAL (aguardando leituras)
                     if (modalAtivoRef.current) {
@@ -106,7 +106,7 @@ export default function AddUserModal({
 
             } catch (error) {
                 console.error('❌ Erro no polling de biometria:', error);
-                
+
                 // ✅ VERIFICAR SE MODAL AINDA ESTÁ ATIVO ANTES DE TENTAR NOVAMENTE
                 if (modalAtivoRef.current && tentativas < maxTentativas) {
                     pollingRef.current = setTimeout(poll, 2000);
@@ -125,32 +125,32 @@ export default function AddUserModal({
     // 🎯 FUNÇÃO PARA CAPTURAR MENSAGENS ESPECÍFICAS DO FLUXO
     const capturarMensagensEspecificas = (etapa: string, mensagem: string, dados: any) => {
         console.log('🎯 Capturando mensagem específica:', { etapa, mensagem, dados });
-        
+
         // 🖐️ MENSAGENS DE CAPTURA DE DIGITAIS
         if (mensagem.includes('insira o dedo') || mensagem.includes('coloque o dedo')) {
             setBiometriaMensagem(`👆 ${mensagem}`);
         }
-        
+
         // 🔄 MENSAGENS DE REPETIÇÃO
         else if (mensagem.includes('novamente') || mensagem.includes('repetir') || mensagem.includes('outra vez')) {
             setBiometriaMensagem(`🔄 ${mensagem}`);
         }
-        
+
         // 📸 MENSAGENS DE CAPTURA BEM-SUCEDIDA
         else if (mensagem.includes('capturada') || mensagem.includes('lida') || mensagem.includes('sucesso')) {
             setBiometriaMensagem(`✅ ${mensagem}`);
         }
-        
+
         // ⚠️ MENSAGENS DE ALERTA/AVISO
         else if (mensagem.includes('aguarde') || mensagem.includes('processando') || mensagem.includes('verificando')) {
             setBiometriaMensagem(`⏳ ${mensagem}`);
         }
-        
+
         // ❌ MENSAGENS DE ERRO ESPECÍFICAS
         else if (mensagem.includes('erro') || mensagem.includes('falha') || mensagem.includes('inválida')) {
             setBiometriaMensagem(`❌ ${mensagem}`);
         }
-        
+
         // 📊 INFORMAR POSIÇÃO/ETAPA ATUAL
         else if (dados?.posicao || dados?.leitura_atual) {
             const posicao = dados.posicao || dados.leitura_atual;
@@ -161,15 +161,15 @@ export default function AddUserModal({
     // ✅ TRATAMENTO DE SUCESSO
     const tratarSucessoBiometria = async (dados: any) => {
         pararPollingBiometria();
-        
+
         if (!modalAtivoRef.current) {
             console.log('🛑 Operação cancelada - modal fechado');
             return;
         }
-        
+
         const posicao = dados?.posicao || 'N/A';
         setBiometriaMensagem(`🎉 Biometria cadastrada com sucesso! Posição: ${posicao}`);
-        
+
         // Registrar log de sucesso
         if (usuarioCriado) {
             await databaseService.createActionLog({
@@ -183,7 +183,7 @@ export default function AddUserModal({
         }
 
         setCadastrandoBiometria(false);
-        
+
         // Fechar modal após sucesso (apenas para novos usuários)
         if (!userToEdit) {
             setTimeout(() => {
@@ -198,7 +198,7 @@ export default function AddUserModal({
     // ❌ TRATAMENTO DE ERRO
     const tratarErroBiometria = async (mensagem: string) => {
         pararPollingBiometria();
-        
+
         if (modalAtivoRef.current) {
             setBiometriaMensagem(`❌ ${mensagem || 'Erro no cadastro de biometria'}`);
             setCadastrandoBiometria(false);
@@ -219,7 +219,7 @@ export default function AddUserModal({
     // ⏰ TRATAMENTO DE TIMEOUT
     const tratarTimeoutBiometria = () => {
         pararPollingBiometria();
-        
+
         if (modalAtivoRef.current) {
             setBiometriaMensagem('❌ Tempo limite excedido para cadastro de biometria');
             setCadastrandoBiometria(false);
@@ -229,7 +229,7 @@ export default function AddUserModal({
     // 🔌 TRATAMENTO DE ERRO DE CONEXÃO
     const tratarErroConexao = () => {
         pararPollingBiometria();
-        
+
         if (modalAtivoRef.current) {
             setBiometriaMensagem('❌ Erro de conexão com a catraca');
             setCadastrandoBiometria(false);
@@ -479,12 +479,12 @@ export default function AddUserModal({
 
             if (result.success) {
                 setBiometriaMensagem('🔄 Conectando com a catraca... Aguarde as instruções...');
-                
+
                 // 🎯 INICIAR POLLING PARA CAPTURAR TODAS AS ETAPAS
                 if (modalAtivoRef.current) {
                     iniciarPollingBiometria();
                 }
-                
+
                 return true;
             } else {
                 let mensagemErro = result.error;
@@ -510,7 +510,7 @@ export default function AddUserModal({
             }
         } catch (error: any) {
             console.error('❌ Erro no cadastro de biometria:', error);
-            
+
             if (modalAtivoRef.current) {
                 setBiometriaMensagem(`❌ Erro de conexão: ${error.message}`);
                 setCadastrandoBiometria(false);
@@ -641,30 +641,30 @@ export default function AddUserModal({
 
     const handleClose = () => {
         console.log('🚪 Fechando modal - iniciando limpeza...');
-        
+
         modalAtivoRef.current = false;
         pararPollingBiometria();
-        
+
         if (cameraActive) {
             stopCamera();
         }
         if (previewUrl) {
             URL.revokeObjectURL(previewUrl);
         }
-        
+
         setImagemFile(null);
         setPreviewUrl(null);
         setBiometriaMensagem('');
         setCadastrandoBiometria(false);
         setEtapaAtual('');
         setUsuarioCriado(null);
-        
+
         onClose();
     };
 
     const handleCloseWithoutBiometry = () => {
         console.log('🚪 Fechando sem biometria - iniciando limpeza...');
-        
+
         modalAtivoRef.current = false;
         pararPollingBiometria();
         setUsuarioCriado(null);
@@ -748,28 +748,6 @@ export default function AddUserModal({
                                 Atualizar
                             </button>
                         </div>
-
-                        {biometriaMensagem && (
-                            <div className={`text-sm p-2 rounded mt-2 ${biometriaMensagem.includes('❌') ? 'bg-red-100 text-red-700 border border-red-200' :
-                                biometriaMensagem.includes('✅') || biometriaMensagem.includes('🎉') ? 'bg-green-100 text-green-700 border border-green-200' :
-                                biometriaMensagem.includes('🔄') || biometriaMensagem.includes('⏳') ? 'bg-blue-100 text-blue-700 border border-blue-200' :
-                                biometriaMensagem.includes('👆') ? 'bg-yellow-100 text-yellow-700 border border-yellow-200' :
-                                'bg-gray-100 text-gray-700 border border-gray-200'
-                                }`}>
-                                <div className="font-medium">{etapaAtual || 'Status'}</div>
-                                <div className="mt-1">{biometriaMensagem}</div>
-                                {cadastrandoBiometria && (
-                                    <div className="mt-2">
-                                        <div className="w-full bg-gray-200 rounded-full h-1.5">
-                                            <div className="bg-blue-600 h-1.5 rounded-full animate-pulse"></div>
-                                        </div>
-                                        <div className="text-xs text-gray-500 mt-1 text-center">
-                                            Aguardando leituras da digital...
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
                     </div>
 
                     <div className="mb-5">
@@ -993,7 +971,27 @@ export default function AddUserModal({
                             }
                         </p>
                     </div>
-
+                    {biometriaMensagem && (
+                        <div className={`text-sm p-2 rounded mt-2 ${biometriaMensagem.includes('❌') ? 'bg-red-100 text-red-700 border border-red-200 mb-4' :
+                            biometriaMensagem.includes('✅') || biometriaMensagem.includes('🎉') ? 'bg-green-100 text-green-700 border border-green-200' :
+                                biometriaMensagem.includes('🔄') || biometriaMensagem.includes('⏳') ? 'bg-blue-100 text-blue-700 border border-blue-200' :
+                                    biometriaMensagem.includes('👆') ? 'bg-yellow-100 text-yellow-700 border border-yellow-200' :
+                                        'bg-gray-100 text-gray-700 border border-gray-200'
+                            }`}>
+                            <div className="font-medium">{etapaAtual || 'Status'}</div>
+                            <div className="mt-1">{biometriaMensagem}</div>
+                            {cadastrandoBiometria && (
+                                <div className="mt-2">
+                                    <div className="w-full bg-gray-200 rounded-full h-1.5">
+                                        <div className="bg-blue-600 h-1.5 rounded-full animate-pulse"></div>
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-1 text-center">
+                                        Aguardando leituras da digital...
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
                     {(userToEdit || usuarioCriado) && (
                         <div className="mb-4">
                             <button
