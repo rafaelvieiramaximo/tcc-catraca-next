@@ -44,6 +44,8 @@ export default function AddUserModal({
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const pollingRef = useRef<NodeJS.Timeout | null>(null);
     const modalAtivoRef = useRef(false);
+    const pollingControllerRef = useRef<AbortController | null>(null);
+
 
     // ==================== SISTEMA MELHORADO DE POLLING ====================
 
@@ -66,7 +68,17 @@ export default function AddUserModal({
 
                 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
-                const response = await fetch(`${API_BASE}/api/biometry`);
+                if (pollingControllerRef.current) {
+                    pollingControllerRef.current.abort();
+                    pollingControllerRef.current = null;
+                }
+                const controller = new AbortController();
+                pollingControllerRef.current = controller;
+                const response = await fetch(`${API_BASE}/api/biometry`, {
+                    method: 'GET',
+                    signal: controller.signal,
+                    cache: 'no-store'
+                });
 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -78,9 +90,7 @@ export default function AddUserModal({
                 // ✅ VERIFICAÇÃO: Se modal ainda ativo antes de atualizar estado
                 if (modalAtivoRef.current && result.etapa && result.mensagem) {
                     setEtapaAtual(result.etapa);
-                    setBiometriaMensagem(result.mensagem);
 
-                    // 🎯 CAPTURAR MENSAGENS ESPECÍFICAS DO FLUXO DE BIOMETRIA
                     capturarMensagensEspecificas(result.etapa, result.mensagem, result.dados);
                 }
 
@@ -117,12 +127,11 @@ export default function AddUserModal({
         };
 
         // ✅ INICIAR POLLING APENAS SE MODAL ESTIVER ATIVO
-        if (modalAtivoRef.current) {
+        if (modalAtivoRef.current || cadastrandoBiometria) {
             poll();
         }
     };
 
-    // 🎯 FUNÇÃO PARA CAPTURAR MENSAGENS ESPECÍFICAS DO FLUXO
     const capturarMensagensEspecificas = (etapa: string, mensagem: string, dados: any) => {
         console.log('🎯 Capturando mensagem específica:', { etapa, mensagem, dados });
 
@@ -153,8 +162,7 @@ export default function AddUserModal({
 
         // 📊 INFORMAR POSIÇÃO/ETAPA ATUAL
         else if (dados?.posicao || dados?.leitura_atual) {
-            const posicao = dados.posicao || dados.leitura_atual;
-            setBiometriaMensagem(`${mensagem} (Posição: ${posicao})`);
+            setBiometriaMensagem(`${mensagem}`);
         }
     };
 
@@ -167,8 +175,7 @@ export default function AddUserModal({
             return;
         }
 
-        const posicao = dados?.posicao || 'N/A';
-        setBiometriaMensagem(`🎉 Biometria cadastrada com sucesso! Posição: ${posicao}`);
+        setBiometriaMensagem(`🎉 Biometria cadastrada com sucesso!`);
 
         // Registrar log de sucesso
         if (usuarioCriado) {
@@ -177,7 +184,7 @@ export default function AddUserModal({
                 identificador: usuarioCriado.identificador,
                 acao: 'CADASTRAR_BIOMETRIA',
                 status: 'SUCESSO',
-                detalhes: `Biometria cadastrada na posição ${posicao}`,
+                detalhes: `Biometria cadastrada com sucesso!`,
                 nome_usuario: usuarioCriado.nome
             });
         }
@@ -241,6 +248,10 @@ export default function AddUserModal({
         if (pollingRef.current) {
             clearTimeout(pollingRef.current);
             pollingRef.current = null;
+        }
+        if (pollingControllerRef.current) {
+            pollingControllerRef.current.abort();          
+            pollingControllerRef.current = null;
         }
     };
 

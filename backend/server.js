@@ -146,7 +146,7 @@ app.get('/api/biometry', async (req, res) => {
   try {
     console.log('🔍 Consultando status da biometria na catraca...');
 
-    const response = await fetch('http://192.168.11.220:5000/api/biometry', {
+    const response = await fetch(`${process.env.CATRACA_API_URL}/api/biometry`, {
       method: 'GET',
       timeout: 5000 // 5 segundos timeout
     });
@@ -989,14 +989,12 @@ app.get('/api/logs/entrada', async (req, res) => {
 
 // ==================== ENDPOINTS CATRACA ====================
 
-const CATRACA_API_URL = 'http://192.168.11.220:5000';
-
 // Endpoint para verificar status da catraca
 app.get('/api/catraca/status', async (req, res) => {
   try {
     console.log('🔍 Verificando status da catraca...');
 
-    const response = await fetch(`${CATRACA_API_URL}/status`, {
+    const response = await fetch(`${process.env.CATRACA_API_URL}/status`, {
       method: 'GET',
       timeout: 5000
     });
@@ -1062,7 +1060,7 @@ app.post('/api/catraca/iniciar-cadastro', async (req, res) => {
     // Chamar API da catraca para iniciar cadastro
     console.log('🔄 Chamando catraca para cadastrar biometria...');
 
-    const catracaResponse = await fetch(`${CATRACA_API_URL}/iniciar-cadastro`, {
+    const catracaResponse = await fetch(`${process.env.CATRACA_API_URL}/iniciar-cadastro`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1197,7 +1195,7 @@ app.post('/api/users/com-biometria', upload.single('image'), async (req, res) =>
     // 4. Chamar catraca para cadastrar biometria
     console.log('🔄 Iniciando cadastro de biometria na catraca...');
 
-    const catracaResponse = await fetch(`${CATRACA_API_URL}/iniciar-cadastro`, {
+    const catracaResponse = await fetch(`${process.env.CATRACA_API_URL}/iniciar-cadastro`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
