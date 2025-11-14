@@ -15,13 +15,12 @@ export default function Header({ onLogout, pageName, user }: HeaderProps) {
   };
 
   const handleLogoutClick = () => {
-    // if (typeof window !== "undefined") {
-    //   const confirmLogout = window.confirm("Deseja realmente sair do sistema?");
-    //   if (confirmLogout) {
-    //     onLogout();
-    //   }
-    // }
-    onLogout();
+    if (typeof window !== "undefined") {
+      const confirmLogout = window.confirm("Deseja realmente sair do sistema?");
+      if (confirmLogout) {
+        onLogout();
+      }
+    }
   };
 
   return (
