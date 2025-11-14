@@ -56,6 +56,16 @@ app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
+// ==================== ESTADO GLOBAL BIOMETRIA ====================
+
+// Estado principal para compatibilidade
+let biometriaState = {
+  etapa: '',
+  mensagem: 'Aguardando início do cadastro',
+  dados: null,
+  timestamp: new Date().toISOString(),
+  success: true
+};
 
 // ==================== NOVOS ENDPOINTS PARA POLLING ====================
 
@@ -87,12 +97,12 @@ app.get('/api/check-new-entries', async (req, res) => {
     // ✅ DETECTAR MUDANÇAS PELA CONTAGEM (MAIS CONFIÁVEL)
     const hasChanges = currentChangeCount > lastChangeCount;
 
-    console.log('🔍 Verificando mudanças:', {
-      lastChangeCount,
-      currentChangeCount,
-      hasChanges,
-      lastChangeTime
-    });
+    // console.log('🔍 Verificando mudanças:', {
+    //   lastChangeCount,
+    //   currentChangeCount,
+    //   hasChanges,
+    //   lastChangeTime
+    // });
 
     res.json({
       success: true,
@@ -140,52 +150,205 @@ app.get('/api/recent-entries', async (req, res) => {
   }
 });
 
-// ============= ENDPOINT DE STATUS DE BIOMETRIA =============
+// ==================== NOVO ENDPOINT PARA WEBHOOK ====================
 
-app.get('/api/biometry', async (req, res) => {
+// ✅ CORREÇÃO: Usar URL configurável
+const getWebhookUrl = () => {
+  return `${process.env.NODE_SERVER_URL}/webhook/biometria`;
+};
+
+// ✅ CORREÇÃO: Estado por sessão (opcional, mas recomendado)
+const biometriaSessions = new Map();
+let currentSessionId = null;
+
+app.post('/api/webhook/biometria', express.json(), (req, res) => {
   try {
-    console.log('🔍 Consultando status da biometria na catraca...');
+    const { etapa, mensagem, dados, success, session_id } = req.body;
 
-    const response = await fetch(`${process.env.CATRACA_API_URL}/api/biometry`, {
-      method: 'GET',
-      timeout: 5000 // 5 segundos timeout
+    console.log('📨 [WEBHOOK] Recebido do Python:', {
+      session_id,
+      etapa,
+      mensagem,
+      dados,
+      success,
+      timestamp: new Date().toISOString()
     });
 
-    if (!response.ok) {
-      throw new Error(`Catraca retornou status: ${response.status}`);
+    if (!etapa) {
+      return res.status(400).json({
+        success: false,
+        error: 'Campo "etapa" é obrigatório'
+      });
     }
 
-    const data = await response.json();
-    
-    console.log('📊 Status da biometria:', {
-      etapa: data.etapa,
-      mensagem: data.mensagem,
-      success: data.success
+    // ✅ CORREÇÃO: Gerenciar múltiplas sessões (opcional)
+    const sessionKey = session_id || 'default';
+
+    if (!biometriaSessions.has(sessionKey)) {
+      biometriaSessions.set(sessionKey, {
+        etapa: 'inicial',
+        mensagem: 'Aguardando início do cadastro',
+        dados: null,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    const sessionState = biometriaSessions.get(sessionKey);
+    sessionState.etapa = etapa;
+    sessionState.mensagem = mensagem || 'Processando...';
+    sessionState.dados = dados || null;
+    sessionState.success = success !== undefined ? success : true;
+    sessionState.timestamp = new Date().toISOString();
+
+    // ✅ CORREÇÃO: Manter sessão atual para compatibilidade
+    biometriaState = sessionState;
+    currentSessionId = sessionKey;
+
+    console.log('💾 Estado atualizado via webhook:', {
+      session: sessionKey,
+      etapa: etapa,
+      timestamp: sessionState.timestamp
     });
 
     res.json({
       success: true,
-      etapa: data.etapa,
-      mensagem: data.mensagem,
-      dados: data.dados,
+      message: 'Webhook recebido com sucesso',
+      session_id: sessionKey,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error('❌ Erro ao consultar status da biometria:', error.message);
-    
+    console.error('❌ Erro ao processar webhook:', error);
     res.status(500).json({
       success: false,
-      error: 'Catraca offline ou indisponível',
+      error: 'Erro interno ao processar webhook'
+    });
+  }
+});
+
+// ✅ Adicione isso no seu backend Node.js para debug
+app.get('/api/webhook/biometria', (req, res) => {
+  console.log('🔍 [DEBUG] GET recebido no webhook');
+  
+  res.json({
+    success: true,
+    message: 'Endpoint de webhook funcionando! Use POST para enviar dados.',
+    metodo: 'GET (apenas para teste)',
+    estado_atual: biometriaState,
+    sessoes_ativas: Array.from(biometriaSessions.entries()),
+    timestamp: new Date().toISOString()
+  });
+});
+// ============= ENDPOINT DE STATUS DE BIOMETRIA =============
+
+app.get('/api/biometry', async (req, res) => {
+  try {
+    const { session_id } = req.query;
+    console.log('🔍 [WEBHOOK] Consultando status da biometria...', { session_id });
+
+    // ✅ CORREÇÃO: Buscar estado da sessão específica ou atual
+    let estado;
+    if (session_id && biometriaSessions.has(session_id)) {
+      estado = biometriaSessions.get(session_id);
+    } else {
+      estado = biometriaState;
+    }
+
+    const resposta = {
+      success: true,
+      etapa: estado.etapa,
+      mensagem: estado.mensagem,
+      dados: estado.dados,
+      timestamp: estado.timestamp,
+      metodo: 'webhook',
+      session_id: session_id || currentSessionId
+    };
+
+    console.log('📤 [NODE → FRONTEND] Estado atual:', resposta.etapa);
+
+    res.json(resposta);
+
+  } catch (error) {
+    console.error('❌ [ERRO] Ao consultar status da biometria:', error.message);
+
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor',
       detalhes: error.message,
       etapa: 'erro',
-      mensagem: 'Não foi possível conectar com a catraca',
+      mensagem: 'Erro ao consultar estado da biometria',
       timestamp: new Date().toISOString()
     });
   }
 });
 
+// ✅ NOVO: Endpoint para limpar sessões antigas
+app.post('/api/biometry/cleanup', async (req, res) => {
+  try {
+    const { older_than } = req.body; // em minutos
+    const cutoffTime = Date.now() - (parseInt(older_than) || 60) * 60 * 1000;
 
+    let cleanedCount = 0;
+
+    for (const [sessionId, session] of biometriaSessions.entries()) {
+      const sessionTime = new Date(session.timestamp).getTime();
+      if (sessionTime < cutoffTime) {
+        biometriaSessions.delete(sessionId);
+        cleanedCount++;
+      }
+    }
+
+    console.log(`🧹 Limpeza: ${cleanedCount} sessões removidas`);
+
+    res.json({
+      success: true,
+      message: `Limpeza concluída: ${cleanedCount} sessões removidas`,
+      remaining_sessions: biometriaSessions.size
+    });
+
+  } catch (error) {
+    console.error('❌ Erro na limpeza:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro ao limpar sessões'
+    });
+  }
+});
+
+// ==================== CANCELAR CADASTRO ====================
+
+app.post('/api/cancelar-cadastro', async (req, res) => {
+  try {
+    console.log('🛑 [CANCELAR] Recebido cancelamento de cadastro...');
+
+    // Atualizar estado global para cancelado
+    biometriaState = {
+      etapa: 'cancelado',
+      mensagem: 'Cadastro cancelado pelo usuário',
+      dados: null,
+      timestamp: new Date().toISOString(),
+      success: false
+    };
+
+    // Limpar todas as sessões ativas
+    biometriaSessions.clear();
+    currentSessionId = null;
+
+    console.log('✅ Estado atualizado para cancelado');
+
+    res.json({
+      success: true,
+      message: 'Cadastro cancelado com sucesso'
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao cancelar cadastro:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno ao cancelar cadastro'
+    });
+  }
+});
 // ==================== ENDPOINT DE UPLOAD ====================
 
 app.put('/api/users/:id/image-file', upload.single('image'), async (req, res) => {
@@ -994,7 +1157,7 @@ app.get('/api/catraca/status', async (req, res) => {
   try {
     console.log('🔍 Verificando status da catraca...');
 
-    const response = await fetch(`${process.env.CATRACA_API_URL}/status`, {
+    const response = await fetch(`${process.env.CATRACA_API_URL}/catraca/status`, {
       method: 'GET',
       timeout: 5000
     });
@@ -1025,7 +1188,6 @@ app.get('/api/catraca/status', async (req, res) => {
   }
 });
 
-// Endpoint para iniciar cadastro de biometria
 app.post('/api/catraca/iniciar-cadastro', async (req, res) => {
   const client = await pool.connect();
 
@@ -1057,10 +1219,29 @@ app.post('/api/catraca/iniciar-cadastro', async (req, res) => {
     const usuario = userCheck.rows[0];
     console.log(`👤 Usuário encontrado: ${usuario.nome} (ID: ${usuario.id})`);
 
-    // Chamar API da catraca para iniciar cadastro
+    // ✅ CORREÇÃO: Gerar session ID único
+    const sessionId = `session_${user_id}_${Date.now()}`;
+
+    // ✅ CORREÇÃO: Resetar estado com session
+    biometriaSessions.set(sessionId, {
+      etapa: 'iniciando',
+      mensagem: 'Iniciando cadastro biométrico...',
+      dados: { user_id, identificador, nome },
+      success: true,
+      timestamp: new Date().toISOString()
+    });
+
+    biometriaState = biometriaSessions.get(sessionId);
+    currentSessionId = sessionId;
+
+    // ✅ CORREÇÃO: Usar URL configurável do webhook
+    const webhookUrl = getWebhookUrl();
+    console.log(`🔗 Webhook URL: ${webhookUrl}`);
+
+    // Chamar API da catraca para iniciar cadastro COM WEBHOOK CORRETO
     console.log('🔄 Chamando catraca para cadastrar biometria...');
 
-    const catracaResponse = await fetch(`${process.env.CATRACA_API_URL}/iniciar-cadastro`, {
+    const catracaResponse = await fetch(`${process.env.CATRACA_API_URL}/catraca/iniciar-cadastro`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1068,9 +1249,11 @@ app.post('/api/catraca/iniciar-cadastro', async (req, res) => {
       body: JSON.stringify({
         user_id: user_id,
         identificador: identificador,
-        nome: usuario.nome
+        nome: usuario.nome,
+        webhook_url: webhookUrl,
+        session_id: sessionId  // ✅ Nova: identificar sessão
       }),
-      timeout: 60000 // 60 segundos para cadastro biométrico
+      timeout: 60000
     });
 
     if (!catracaResponse.ok) {
@@ -1078,59 +1261,61 @@ app.post('/api/catraca/iniciar-cadastro', async (req, res) => {
     }
 
     const catracaResult = await catracaResponse.json();
-    console.log('📨 Resposta da catraca:', catracaResult);
+    console.log('📨 Resposta inicial da catraca:', catracaResult);
 
     if (!catracaResult.success) {
       throw new Error(catracaResult.message || 'Erro no cadastro da biometria');
     }
 
-    // Se chegou aqui, biometria foi cadastrada com sucesso
-    console.log(`✅ Biometria cadastrada na posição: ${catracaResult.posicao}`);
+    console.log('✅ Cadastro iniciado - aguardando webhooks...');
 
-    // Registrar log de sucesso - COM user_id VÁLIDO
+    // Registrar log de início
     await client.query(
       `INSERT INTO log (id_usuario, identificador, acao, status, detalhes, nome_usuario)
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [user_id, identificador, 'CADASTRAR_BIOMETRIA', 'SUCESSO',
-        `Biometria cadastrada na posição ${catracaResult.posicao}`, usuario.nome]
+      [user_id, identificador, 'INICIAR_CADASTRO_BIOMETRIA', 'INICIADO',
+        `Cadastro biométrico iniciado - Sessão: ${sessionId}`, usuario.nome]
     );
 
+    // Responder com session ID
     res.json({
       success: true,
-      message: 'Biometria cadastrada com sucesso',
-      posicao: catracaResult.posicao
+      message: 'Cadastro biométrico iniciado com sucesso',
+      webhook_esperado: true,
+      session_id: sessionId  // ✅ Nova: retornar session ID para frontend
     });
 
   } catch (error) {
-    console.error('❌ Erro no cadastro de biometria:', error);
+    console.error('❌ Erro ao iniciar cadastro de biometria:', error);
+
+    // ✅ CORREÇÃO: Atualizar estado com erro
+    if (currentSessionId && biometriaSessions.has(currentSessionId)) {
+      const sessionState = biometriaSessions.get(currentSessionId);
+      sessionState.etapa = 'erro';
+      sessionState.mensagem = `Erro ao iniciar cadastro: ${error.message}`;
+      sessionState.success = false;
+      sessionState.timestamp = new Date().toISOString();
+    }
 
     // Registrar log de erro
     if (req.body.user_id) {
       await client.query(
         `INSERT INTO log (id_usuario, identificador, acao, status, detalhes, nome_usuario)
          VALUES ($1, $2, $3, $4, $5, $6)`,
-        [req.body.user_id, req.body.identificador, 'CADASTRAR_BIOMETRIA', 'ERRO',
-        `Falha: ${error.message}`, req.body.nome]
-      );
-    } else {
-      await client.query(
-        `INSERT INTO log (identificador, acao, status, detalhes, nome_usuario)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [req.body.identificador, 'CADASTRAR_BIOMETRIA', 'ERRO',
+        [req.body.user_id, req.body.identificador, 'INICIAR_CADASTRO_BIOMETRIA', 'ERRO',
         `Falha: ${error.message}`, req.body.nome]
       );
     }
 
     res.status(500).json({
       success: false,
-      error: `Erro no cadastro: ${error.message}`
+      error: `Erro ao iniciar cadastro: ${error.message}`
     });
   } finally {
     client.release();
   }
 });
 
-// Endpoint para criar usuário COM biometria (transação completa)
 app.post('/api/users/com-biometria', upload.single('image'), async (req, res) => {
   const client = await pool.connect();
   let userId = null;
@@ -1192,7 +1377,16 @@ app.post('/api/users/com-biometria', upload.single('image'), async (req, res) =>
       console.log(`📸 Imagem salva: ${filename}`);
     }
 
-    // 4. Chamar catraca para cadastrar biometria
+    // ✅ RESETAR ESTADO antes de iniciar biometria
+    biometriaState = {
+      etapa: 'iniciando',
+      mensagem: 'Criando usuário e iniciando cadastro biométrico...',
+      dados: { userId, nome, identificador },
+      success: true,
+      timestamp: new Date().toISOString()
+    };
+
+    // 4. Chamar catraca para cadastrar biometria COM WEBHOOK
     console.log('🔄 Iniciando cadastro de biometria na catraca...');
 
     const catracaResponse = await fetch(`${process.env.CATRACA_API_URL}/iniciar-cadastro`, {
@@ -1203,7 +1397,9 @@ app.post('/api/users/com-biometria', upload.single('image'), async (req, res) =>
       body: JSON.stringify({
         user_id: userId,
         identificador: identificador,
-        nome: nome
+        nome: nome,
+        // ✅ INFORMAR URL DO WEBHOOK
+        webhook_url: `http://${process.env.NODE_SERVER_URL}/api/webhook/biometria`
       }),
       timeout: 60000
     });
@@ -1213,68 +1409,47 @@ app.post('/api/users/com-biometria', upload.single('image'), async (req, res) =>
     }
 
     const catracaResult = await catracaResponse.json();
-    console.log('📨 Resposta da catraca:', catracaResult);
+    console.log('📨 Resposta inicial da catraca:', catracaResult);
 
     if (!catracaResult.success) {
       throw new Error(catracaResult.message || 'Erro no cadastro da biometria');
     }
 
-    // 5. Se biometria ok, salvar posição do template
-    await client.query(
-      'INSERT INTO user_finger (user_id, template_position) VALUES ($1, $2)',
-      [userId, catracaResult.posicao]
-    );
-
-    console.log(`✅ Biometria salva no banco: posição ${catracaResult.posicao}`);
-
-    // 6. Commit de TUDO
+    // ✅ NÃO esperar pela conclusão - commit IMEDIATO
     await client.query('COMMIT');
 
-    // 7. Log de sucesso
+    console.log('✅ Usuário criado - biometria em andamento via webhooks...');
+
+    // Registrar log de início
     await client.query(
       `INSERT INTO log (id_usuario, identificador, acao, status, detalhes, nome_usuario)
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [userId, identificador, 'CRIAR_USUARIO_COM_BIOMETRIA', 'SUCESSO',
-        `Usuário criado com biometria na posição ${catracaResult.posicao}`, nome]
+      [userId, identificador, 'CRIAR_USUARIO_COM_BIOMETRIA', 'INICIADO',
+        'Usuário criado - biometria em andamento', nome]
     );
-
-    console.log(`🎉 Usuário criado com sucesso! ID: ${userId}, Biometria: ${catracaResult.posicao}`);
 
     res.status(201).json({
       success: true,
       userId,
-      posicao: catracaResult.posicao,
-      message: 'Usuário criado com biometria cadastrada com sucesso'
+      message: 'Usuário criado - cadastro biométrico em andamento'
     });
 
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('❌ Erro ao criar usuário com biometria:', error);
 
+    // Atualizar estado com erro
+    biometriaState = {
+      etapa: 'erro',
+      mensagem: `Erro ao criar usuário: ${error.message}`,
+      dados: null,
+      success: false,
+      timestamp: new Date().toISOString()
+    };
+
     // Log de erro
     if (userId) {
-      await client.query(
-        `INSERT INTO log (id_usuario, identificador, acao, status, detalhes, nome_usuario)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [userId, req.body.identificador, 'CRIAR_USUARIO_COM_BIOMETRIA', 'ERRO',
-          `Falha na biometria: ${error.message}`, req.body.nome]
-      );
-
       await client.query('DELETE FROM usuario WHERE id = $1', [userId]);
-      console.log(`🗑️ Usuário ${userId} removido devido a falha na biometria`);
-    } else {
-      await pool.query(
-        `INSERT INTO log (identificador, acao, status, detalhes, nome_usuario)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [req.body.identificador, 'CRIAR_USUARIO_COM_BIOMETRIA', 'ERRO',
-        `Falha antes da criação: ${error.message}`, req.body.nome]
-      );
-    }
-
-    if (error.code === '23505') {
-      return res.status(409).json({
-        error: 'Identificador já cadastrado'
-      });
     }
 
     res.status(500).json({
@@ -1344,7 +1519,7 @@ async function initializeDatabase() {
     // Verificar/Adicionar coluna updated_at se necessário
     try {
       await client.query('SELECT updated_at FROM log_entrada LIMIT 1');
-      console.log('✅ Coluna updated_at já existe');
+      // console.log('✅ Coluna updated_at já existe');
     } catch (error) {
       if (error.code === '42703') {
         console.log('🔄 Criando coluna updated_at...');
@@ -1367,11 +1542,12 @@ async function initializeDatabase() {
 async function startServer() {
   await initializeDatabase();
 
-  app.listen(port, () => {
-    console.log('🚀 Servidor rodando!');
-    console.log(`📍 http://localhost:${port}/api`);
-    console.log(`🖼️  Sistema de imagens: ARQUIVOS FÍSICOS`);
-    console.log(`📁 Pasta: ${usersImagesDir}`);
+  app.listen(port, '0.0.0.0', () => {
+    console.log('🚀 Servidor Node.js rodando!');
+    console.log(`📍 Local: http://localhost:${port}/api`);
+    console.log(`🌐 Rede: http://192.168.11.125:${port}/api`);
+    console.log(`🔗 Webhook: http://192.168.11.125:${port}/api/webhook/biometria`);
+    console.log(`🐍 Catraca API: ${process.env.CATRACA_API_URL}`);
   });
 }
 
