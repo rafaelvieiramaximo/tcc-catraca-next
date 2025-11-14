@@ -42,7 +42,7 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
     setIsAuthenticated(false);
     setTimeout(() => {
       setCurrentUser(null);
-    }, 500);
+    }, 800);
     setAuthToken(null);
 
     if (typeof window !== 'undefined') {
