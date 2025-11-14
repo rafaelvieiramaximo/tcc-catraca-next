@@ -31,11 +31,10 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
       setLoading(true);
       const usersData = await databaseService.getAllUsersWithFingerprintStatus();
 
-      // ✅ FILTRAGEM POR PERFIL NO FRONTEND
       let usuariosFiltrados = usersData;
       if (user?.tipo === 'RH' || user?.tipo === 'PORTARIA') {
         usuariosFiltrados = usersData.filter(u =>
-          u.tipo === 'ESTUDANTE' || u.tipo === 'FUNCIONARIO'
+          u.tipo === 'ESTUDANTE' || u.tipo === 'FUNCIONARIO' || u.tipo === 'VISITANTE'
         );
       }
 
