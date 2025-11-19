@@ -163,16 +163,25 @@ let currentSessionId = null;
 
 app.post('/api/webhook/biometria', express.json(), (req, res) => {
   try {
-    const { etapa, mensagem, dados, success, session_id } = req.body;
-
     console.log('📨 [WEBHOOK] Recebido do Python:', {
-      session_id,
-      etapa,
-      mensagem,
-      dados,
-      success,
+      session_id: req.body.session_id,
+      etapa: req.body.etapa,
+      mensagem: req.body.mensagem,
+      dados: req.body.dados,
+      success: req.body.success,
       timestamp: new Date().toISOString()
     });
+
+    biometriaState = {
+      etapa: req.body.etapa,
+      mensagem: req.body.mensagem,
+      dados: req.body.dados,
+      success: req.body.success,
+      timestamp: new Date().toISOString()
+    };
+
+    const { etapa, mensagem, dados, success, session_id } = req.body;
+    console.log('🔍 [WEBHOOK] Etapa recebida:', etapa);
 
     if (!etapa) {
       return res.status(400).json({
@@ -181,7 +190,7 @@ app.post('/api/webhook/biometria', express.json(), (req, res) => {
       });
     }
 
-    // ✅ CORREÇÃO: Gerenciar múltiplas sessões (opcional)
+    // ✅ CORREÇÃO: Gerenciar múltiplas sessões
     const sessionKey = session_id || 'default';
 
     if (!biometriaSessions.has(sessionKey)) {
@@ -189,6 +198,7 @@ app.post('/api/webhook/biometria', express.json(), (req, res) => {
         etapa: 'inicial',
         mensagem: 'Aguardando início do cadastro',
         dados: null,
+        success: true,
         timestamp: new Date().toISOString()
       });
     }
@@ -200,25 +210,33 @@ app.post('/api/webhook/biometria', express.json(), (req, res) => {
     sessionState.success = success !== undefined ? success : true;
     sessionState.timestamp = new Date().toISOString();
 
-    // ✅ CORREÇÃO: Manter sessão atual para compatibilidade
-    biometriaState = sessionState;
-    currentSessionId = sessionKey;
+    // ✅ LOG ESPECÍFICO PARA ERROS
+    if (!success) {
+      console.error('❌ [WEBHOOK ERRO] Erro recebido da catraca:', {
+        session: sessionKey,
+        etapa: etapa,
+        mensagem: mensagem,
+        dados: dados,
+        timestamp: new Date().toISOString()
+      });
+    }
 
-    console.log('💾 Estado atualizado via webhook:', {
+    console.log('💾 [WEBHOOK] Estado atualizado:', {
       session: sessionKey,
       etapa: etapa,
+      mensagem: mensagem,
+      success: success,
       timestamp: sessionState.timestamp
     });
 
     res.json({
       success: true,
       message: 'Webhook recebido com sucesso',
-      session_id: sessionKey,
-      timestamp: new Date().toISOString()
+      session_id: sessionKey
     });
 
   } catch (error) {
-    console.error('❌ Erro ao processar webhook:', error);
+    console.error('💥 [WEBHOOK] Erro ao processar webhook:', error);
     res.status(500).json({
       success: false,
       error: 'Erro interno ao processar webhook'
@@ -229,7 +247,7 @@ app.post('/api/webhook/biometria', express.json(), (req, res) => {
 // ✅ Adicione isso no seu backend Node.js para debug
 app.get('/api/webhook/biometria', (req, res) => {
   console.log('🔍 [DEBUG] GET recebido no webhook');
-  
+
   res.json({
     success: true,
     message: 'Endpoint de webhook funcionando! Use POST para enviar dados.',
@@ -1545,8 +1563,8 @@ async function startServer() {
   app.listen(port, '0.0.0.0', () => {
     console.log('🚀 Servidor Node.js rodando!');
     console.log(`📍 Local: http://localhost:${port}/api`);
-    console.log(`🌐 Rede: http://192.168.11.125:${port}/api`);
-    console.log(`🔗 Webhook: http://192.168.11.125:${port}/api/webhook/biometria`);
+    console.log(`🌐 Rede: http://${process.env.NODE_SERVER_URL}:${port}/api`);
+    console.log(`🔗 Webhook: http://${process.env.NODE_SERVER_URL}:${port}/api/webhook/biometria`);
     console.log(`🐍 Catraca API: ${process.env.CATRACA_API_URL}`);
   });
 }

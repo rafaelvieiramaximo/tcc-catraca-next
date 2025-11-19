@@ -9,8 +9,8 @@ const BiometryStepper: React.FC<BiometryStepperProps> = ({ currentStep, isActive
     // 🎯 MAPEAMENTO OTIMIZADO: Python → Stepper (1-5)
     const getStepNumber = (etapa: string): number => {
         const etapaLower = etapa.toLowerCase();
-        
-        switch(etapaLower) {
+
+        switch (etapaLower) {
             // ETAPA 1: Início e conexão
             case 'iniciando':
             case 'conectado':
@@ -18,27 +18,27 @@ const BiometryStepper: React.FC<BiometryStepperProps> = ({ currentStep, isActive
             case 'aguardando_primeira':
             case 'inicial':
                 return 1;
-            
+
             // ETAPA 2: Primeira capturada e aguardando segunda
             case 'primeira_capturada':
             case 'verificando_existente':
             case 'aguardando_segunda':
             case 'primeira_ok':
                 return 2;
-            
+
             // ETAPA 3: Segunda capturada e validando
             case 'segunda_capturada':
             case 'validando':
             case 'validacao_ok':
             case 'comparando_digitais':
                 return 3;
-            
+
             // ETAPA 4: Salvando
             case 'salvando':
             case 'armazenando':
             case 'gravando_template':
                 return 4;
-            
+
             // ETAPA 5: Finalizado
             case 'finalizado':
             case 'sucesso':
@@ -46,7 +46,7 @@ const BiometryStepper: React.FC<BiometryStepperProps> = ({ currentStep, isActive
             case 'concluido':
             case 'completo':
                 return 5;
-            
+
             // ERRO
             case 'erro':
             case 'erro_inicial':
@@ -57,7 +57,7 @@ const BiometryStepper: React.FC<BiometryStepperProps> = ({ currentStep, isActive
             case 'failed':
             case 'erro_catraca':
                 return 0;
-            
+
             default:
                 // Para etapas desconhecidas, mantém no passo 1 (inicial)
                 if (etapa && etapa !== 'inicial') {
@@ -96,6 +96,12 @@ const BiometryStepper: React.FC<BiometryStepperProps> = ({ currentStep, isActive
                 return '❌ Cadastro cancelado';
             } else if (currentStep.toLowerCase().includes('conexao')) {
                 return '❌ Erro de conexão com a catraca';
+            } else if (currentStep.toLowerCase().includes('digital já cadastrada')) {
+                return '❌ Digital já está cadastrada no sistema';
+            } else if (currentStep.toLowerCase().includes('digitais não correspondem')) {
+                return '❌ As digitais não correspondem';
+            } else if (currentStep.toLowerCase().includes('disconnected')) {
+                return '❌ Sensor desconectado - verifique a conexão';
             } else {
                 return '❌ Erro no processo de cadastro';
             }
@@ -104,15 +110,15 @@ const BiometryStepper: React.FC<BiometryStepperProps> = ({ currentStep, isActive
             if (currentStep === 'conectado') {
                 return '✅ Conectado com a catraca... Aguardando leitura';
             }
-            return '🔌 Conectando com o sensor biométrico...';
+            return '👆 Aguardando primeira leitura';
         }
         if (stepNumber === 2) {
             if (currentStep === 'primeira_capturada') {
-                return '✅ Primeira digital capturada! Aguardando segunda leitura';
+                return '✅ Primeira digital capturada!';
             } else if (currentStep === 'verificando_existente') {
                 return '🔍 Verificando se digital já está cadastrada...';
             }
-            return '👆 Aguardando primeira leitura da digital';
+            return '👆 Aguardando segunda leitura da digital';
         }
         if (stepNumber === 3) {
             if (currentStep === 'segunda_capturada') {
@@ -122,7 +128,6 @@ const BiometryStepper: React.FC<BiometryStepperProps> = ({ currentStep, isActive
             } else if (currentStep === 'validacao_ok') {
                 return '✅ Digitais correspondem! Salvando...';
             }
-            return '👆 Aguardando segunda leitura da digital';
         }
         if (stepNumber === 4) {
             return '💾 Salvando digital no sistema...';
@@ -155,19 +160,17 @@ const BiometryStepper: React.FC<BiometryStepperProps> = ({ currentStep, isActive
                     <span className="text-xs font-medium text-gray-600">
                         Etapa {stepNumber > 0 ? stepNumber : '-'} de 5
                     </span>
-                    <span className={`text-xs font-semibold ${
-                        statusColor === 'red' ? 'text-red-600' :
-                        statusColor === 'green' ? 'text-green-600' : 'text-blue-600'
-                    }`}>
+                    <span className={`text-xs font-semibold ${statusColor === 'red' ? 'text-red-600' :
+                            statusColor === 'green' ? 'text-green-600' : 'text-blue-600'
+                        }`}>
                         {Math.round(progressPercentage)}%
                     </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
                     <div
-                        className={`h-full rounded-full transition-all duration-700 ease-out ${
-                            statusColor === 'red' ? 'bg-red-500' :
-                            statusColor === 'green' ? 'bg-green-500' : 'bg-blue-500'
-                        } ${isInProgress ? 'animate-pulse' : ''}`}
+                        className={`h-full rounded-full transition-all duration-700 ease-out ${statusColor === 'red' ? 'bg-red-500' :
+                                statusColor === 'green' ? 'bg-green-500' : 'bg-blue-500'
+                            } ${isInProgress ? 'animate-pulse' : ''}`}
                         style={{ width: `${progressPercentage}%` }}
                     />
                 </div>
@@ -176,19 +179,18 @@ const BiometryStepper: React.FC<BiometryStepperProps> = ({ currentStep, isActive
             {/* Stepper com números */}
             <div className="relative">
                 {/* Linha conectora de fundo */}
-                <div 
-                    className="absolute top-5 left-0 right-0 h-0.5 bg-gray-200" 
-                    style={{ left: '10%', right: '10%' }} 
+                <div
+                    className="absolute top-5 left-0 right-0 h-0.5 bg-gray-200"
+                    style={{ left: '10%', right: '10%' }}
                 />
-                
+
                 {/* Linha de progresso */}
                 {stepNumber > 0 && (
-                    <div 
-                        className={`absolute top-5 h-0.5 transition-all duration-700 ease-out ${
-                            statusColor === 'red' ? 'bg-red-500' :
-                            statusColor === 'green' ? 'bg-green-500' : 'bg-blue-500'
-                        }`}
-                        style={{ 
+                    <div
+                        className={`absolute top-5 h-0.5 transition-all duration-700 ease-out ${statusColor === 'red' ? 'bg-red-500' :
+                                statusColor === 'green' ? 'bg-green-500' : 'bg-blue-500'
+                            }`}
+                        style={{
                             left: '10%',
                             width: `${(stepNumber - 1) * 20}%`
                         }}
@@ -201,15 +203,14 @@ const BiometryStepper: React.FC<BiometryStepperProps> = ({ currentStep, isActive
                         const status = getStepStatus(step.id);
                         const isFirst = index === 0;
                         const isLast = index === steps.length - 1;
-                        
+
                         return (
-                            <div 
-                                key={step.id} 
-                                className={`flex flex-col items-center ${
-                                    isFirst ? 'items-start' : 
-                                    isLast ? 'items-end' : 
-                                    'items-center'
-                                }`}
+                            <div
+                                key={step.id}
+                                className={`flex flex-col items-center ${isFirst ? 'items-start' :
+                                        isLast ? 'items-end' :
+                                            'items-center'
+                                    }`}
                                 style={{ flex: isFirst || isLast ? '0 0 auto' : '1' }}
                             >
                                 {/* Círculo numerado */}
@@ -220,14 +221,12 @@ const BiometryStepper: React.FC<BiometryStepperProps> = ({ currentStep, isActive
                                         ${status === 'completed'
                                             ? 'bg-green-500 border-green-500 text-white scale-100'
                                             : status === 'active'
-                                                ? `${
-                                                    statusColor === 'red' ? 'bg-red-500 border-red-500' :
+                                                ? `${statusColor === 'red' ? 'bg-red-500 border-red-500' :
                                                     statusColor === 'green' ? 'bg-green-500 border-green-500' :
-                                                    'bg-blue-500 border-blue-500'
-                                                } text-white scale-110 shadow-lg ${
-                                                    statusColor === 'red' ? 'shadow-red-500/50' :
+                                                        'bg-blue-500 border-blue-500'
+                                                } text-white scale-110 shadow-lg ${statusColor === 'red' ? 'shadow-red-500/50' :
                                                     statusColor === 'green' ? 'shadow-green-500/50' :
-                                                    'shadow-blue-500/50'
+                                                        'shadow-blue-500/50'
                                                 }`
                                                 : status === 'error'
                                                     ? 'bg-red-500 border-red-500 text-white'
@@ -240,18 +239,16 @@ const BiometryStepper: React.FC<BiometryStepperProps> = ({ currentStep, isActive
                                 </div>
 
                                 {/* Label */}
-                                <div className={`text-center mt-2 ${
-                                    isFirst ? 'text-left' : 
-                                    isLast ? 'text-right' : 
-                                    'text-center'
-                                }`} style={{ maxWidth: '80px' }}>
-                                    <div className={`text-xs font-medium leading-tight ${
-                                        status === 'active' ? 
+                                <div className={`text-center mt-2 ${isFirst ? 'text-left' :
+                                        isLast ? 'text-right' :
+                                            'text-center'
+                                    }`} style={{ maxWidth: '80px' }}>
+                                    <div className={`text-xs font-medium leading-tight ${status === 'active' ?
                                             (statusColor === 'red' ? 'text-red-600' :
-                                             statusColor === 'green' ? 'text-green-600' : 'text-blue-600') :
-                                        status === 'completed' ? 'text-green-600' : 
-                                        'text-gray-500'
-                                    }`}>
+                                                statusColor === 'green' ? 'text-green-600' : 'text-blue-600') :
+                                            status === 'completed' ? 'text-green-600' :
+                                                'text-gray-500'
+                                        }`}>
                                         {step.label}
                                     </div>
                                 </div>
@@ -264,10 +261,10 @@ const BiometryStepper: React.FC<BiometryStepperProps> = ({ currentStep, isActive
             {/* Mensagem de status atual */}
             <div className={`
                 mt-4 p-3 rounded-lg text-sm text-center font-medium transition-colors duration-300
-                ${isErrorState 
-                    ? 'bg-red-50 text-red-700 border border-red-200' 
+                ${isErrorState
+                    ? 'bg-red-50 text-red-700 border border-red-200'
                     : isCompleted
-                        ? 'bg-green-50 text-green-700 border border-green-200' 
+                        ? 'bg-green-50 text-green-700 border border-green-200'
                         : 'bg-blue-50 text-blue-700 border border-blue-200'
                 }
             `}>
@@ -277,10 +274,9 @@ const BiometryStepper: React.FC<BiometryStepperProps> = ({ currentStep, isActive
             {/* Indicador de atividade */}
             {isActive && isInProgress && (
                 <div className="flex items-center justify-center gap-2 text-xs text-gray-500 mt-2">
-                    <div className={`w-2 h-2 rounded-full animate-ping ${
-                        statusColor === 'red' ? 'bg-red-500' :
-                        statusColor === 'green' ? 'bg-green-500' : 'bg-blue-500'
-                    }`}></div>
+                    <div className={`w-2 h-2 rounded-full animate-ping ${statusColor === 'red' ? 'bg-red-500' :
+                            statusColor === 'green' ? 'bg-green-500' : 'bg-blue-500'
+                        }`}></div>
                     <span>Processando...</span>
                 </div>
             )}

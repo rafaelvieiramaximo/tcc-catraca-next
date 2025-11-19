@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { databaseService } from "../../services/database-service";
 import BiometryStepper from "../UserManagement/stepperBiometry";
+import ErrorDisplay from "../Error/ErrorDisplay";
 
 interface AddVisitorModalProps {
     visible: boolean;
@@ -29,6 +30,8 @@ export default function AddVisitorModal({
     const [catracaStatus, setCatracaStatus] = useState<'online' | 'offline' | 'checking'>('checking');
     const [cadastrandoBiometria, setCadastrandoBiometria] = useState(false);
     const [etapaAtual, setEtapaAtual] = useState<string>('');
+    const [erroBiometria, setErroBiometria] = useState<string | null>(null);
+    const [detalhesErro, setDetalhesErro] = useState<string | null>(null);
 
     const [visitanteCriado, setVisitanteCriado] = useState<{ id: number, nome: string, identificador: string } | null>(null);
 
@@ -168,22 +171,62 @@ export default function AddVisitorModal({
         }, 3000);
     };
 
-    const tratarErroBiometria = async () => {
+    const tratarErroBiometria = async (dadosErro?: any) => {
+        console.log('🎯 [DEBUG] tratarErroBiometria CHAMADO', dadosErro);
+
         pararPollingBiometria();
 
-        if (modalAtivoRef.current) {
-            setEtapaAtual('erro');
-            setCadastrandoBiometria(false);
+        if (!modalAtivoRef.current) {
+            console.log('⚠️ Modal não está mais ativo - ignorando erro');
+            return;
+        }
 
-            if (visitanteCriado) {
+        setEtapaAtual('erro');
+        setCadastrandoBiometria(false);
+
+        // EXTRAIR MENSAGEM DE MÚLTIPLAS FONTES
+        let mensagemErro = 'Erro desconhecido no cadastro de biometria';
+        let detalhes = '';
+
+        // Fonte 1: mensagem direta
+        if (dadosErro?.mensagem) {
+            mensagemErro = dadosErro.mensagem;
+        }
+        // Fonte 2: dados da etapa
+        else if (dadosErro?.dados?.erro_tecnico) {
+            mensagemErro = dadosErro.dados.erro_tecnico;
+        }
+        // Fonte 3: etapa específica
+        else if (dadosErro?.etapa) {
+            mensagemErro = `Erro na etapa: ${dadosErro.etapa}`;
+        }
+
+        // Coletar detalhes para debug
+        if (dadosErro?.dados) {
+            detalhes = JSON.stringify(dadosErro.dados, null, 2);
+        } else if (dadosErro) {
+            detalhes = JSON.stringify(dadosErro, null, 2);
+        }
+
+        console.log('✅ [DEBUG] Mensagem final do erro:', mensagemErro);
+        console.log('📋 [DEBUG] Detalhes do erro:', detalhes);
+
+        setErroBiometria(mensagemErro);
+        setDetalhesErro(detalhes);
+
+        // Log no banco
+        if (visitanteCriado) {
+            try {
                 await databaseService.createActionLog({
                     id_usuario: visitanteCriado.id,
                     identificador: visitanteCriado.identificador,
                     acao: 'CADASTRAR_BIOMETRIA_VISITANTE',
                     status: 'ERRO',
-                    detalhes: 'Falha no cadastro da biometria',
+                    detalhes: `Falha: ${mensagemErro}`,
                     nome_usuario: visitanteCriado.nome
                 });
+            } catch (logError) {
+                console.error('❌ Erro ao salvar log:', logError);
             }
         }
     };
@@ -193,10 +236,30 @@ export default function AddVisitorModal({
 
         if (modalAtivoRef.current) {
             setEtapaAtual('timeout');
-            setCadastrandoBiometria(false);
+            setErroBiometria('Timeout - O processo de cadastro demorou muito tempo');
+            setDetalhesErro('O cadastro não foi concluído dentro do tempo esperado.');
         }
     };
 
+    const limparErroETentarNovamente = () => {
+        setErroBiometria(null);
+        setDetalhesErro(null);
+        setEtapaAtual('');
+        setCadastrandoBiometria(false);
+
+        setTimeout(() => {
+            if (modalAtivoRef.current) {
+                iniciarCadastroBiometria();
+            }
+        }, 500);
+    };
+
+    const cancelarELimparErro = () => {
+        setErroBiometria(null);
+        setDetalhesErro(null);
+        setEtapaAtual('');
+        setCadastrandoBiometria(false);
+    };
     const tratarErroConexao = async () => {
         pararPollingBiometria();
 
@@ -816,6 +879,16 @@ export default function AddVisitorModal({
                                     currentStep={etapaAtual}
                                     isActive={cadastrandoBiometria}
                                 />
+
+                                {erroBiometria && (
+                                    <ErrorDisplay
+                                        error={erroBiometria}
+                                        details={detalhesErro || undefined}
+                                        showDetails={process.env.NODE_ENV === 'development'}
+                                        onRetry={limparErroETentarNovamente}
+                                        onCancel={cancelarELimparErro}
+                                    />
+                                )}
                             </div>
                         </div>
                     )}

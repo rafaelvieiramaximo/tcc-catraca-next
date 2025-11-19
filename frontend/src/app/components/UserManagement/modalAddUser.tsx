@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { databaseService, UsuarioCompleto, TipoS } from "../../services/database-service";
 import BiometryStepper from "./stepperBiometry";
+import ErrorDisplay from "../Error/ErrorDisplay";
 
 interface AddUserModalProps {
     visible: boolean;
@@ -36,6 +37,8 @@ export default function AddUserModal({
     const [catracaStatus, setCatracaStatus] = useState<'online' | 'offline' | 'checking'>('checking');
     const [cadastrandoBiometria, setCadastrandoBiometria] = useState(false);
     const [etapaAtual, setEtapaAtual] = useState<string>('');
+    const [erroBiometria, setErroBiometria] = useState<string | null>(null);
+    const [detalhesErro, setDetalhesErro] = useState<string | null>(null);
 
     const [usuarioCriado, setUsuarioCriado] = useState<{ id: number, nome: string, identificador: string } | null>(null);
 
@@ -50,7 +53,9 @@ export default function AddUserModal({
 
     const iniciarPollingBiometria = async () => {
         // console.log('🔄 [WEBHOOK] Iniciando polling para status da biometria...');
-
+        console.log('🚀 [POLLING] 🔥 INICIANDO SISTEMA DE POLLING 🔥');
+        console.log('📱 Modal ativo:', modalAtivoRef.current);
+        console.log('🔧 Cadastrando biometria:', cadastrandoBiometria);
         let tentativas = 0;
         const maxTentativas = 300;
 
@@ -152,6 +157,63 @@ export default function AddUserModal({
         }
     };
 
+    // ==================== FUNÇÃO DE POLLING QUE FALTAVA ====================
+
+    const verificarEstadoBiometria = async () => {
+        // ✅ SEMPRE verificar se o modal ainda está ativo
+        if (!modalAtivoRef.current) {
+            console.log('🛑 [POLLING] Modal fechado - parando polling');
+            return;
+        }
+
+        try {
+            console.log('🔄 [POLLING] Verificando estado...');
+
+            const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
+            const response = await fetch(`${API_BASE}/biometry`);
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            console.log('📊 [POLLING] Etapa recebida:', result.etapa);
+
+            // ✅ ATUALIZAR ETAPA SEMPRE
+            setEtapaAtual(result.etapa);
+
+            // ✅ VERIFICAR SE É ERRO
+            if (result.etapa === 'erro' || !result.success) {
+                console.log('❌ [POLLING] Erro detectado');
+                await tratarErroBiometria(result);
+                return;
+            }
+
+            // ✅ VERIFICAR SE É ETAPA FINAL
+            const etapasFinais = ['finalizado', 'sucesso', 'biometria_cadastrada'];
+            if (etapasFinais.includes(result.etapa)) {
+                console.log('✅ [POLLING] Etapa final alcançada - parando polling');
+                await tratarSucessoBiometria(result);
+                return;
+            }
+
+            // ✅ CONTINUAR POLLING (mesmo se der erro, mas modal ainda ativo)
+            if (modalAtivoRef.current) {
+                console.log('⏰ [POLLING] Agendando próximo check em 300ms');
+                pollingRef.current = setTimeout(verificarEstadoBiometria, 300);
+            }
+
+        } catch (error: any) {
+            console.error('💥 [POLLING] Erro:', error);
+
+            // ✅ CONTINUAR POLLING MESMO COM ERRO (tentar reconectar)
+            if (modalAtivoRef.current) {
+                console.log('🔄 [POLLING] Tentando reconectar em 1s...');
+                pollingRef.current = setTimeout(verificarEstadoBiometria, 1000);
+            }
+        }
+    };
+
     // ✅ TRATAMENTO DE SUCESSO
     const tratarSucessoBiometria = async (dados: any) => {
         pararPollingBiometria();
@@ -205,23 +267,64 @@ export default function AddUserModal({
             console.error('❌ Erro ao cancelar cadastro:', error);
         }
     };
-    // ❌ TRATAMENTO DE ERRO
-    const tratarErroBiometria = async () => {
+    const tratarErroBiometria = async (dadosErro?: any) => {
+        console.log('🎯 [FRONTEND] tratarErroBiometria CHAMADO - dadosRecebidos:', dadosErro);
+
         pararPollingBiometria();
 
-        if (modalAtivoRef.current) {
-            setEtapaAtual('erro');
-            setCadastrandoBiometria(false);
+        if (!modalAtivoRef.current) {
+            console.log('⚠️ Modal fechado - ignorando erro');
+            return;
+        }
 
-            if (usuarioCriado) {
+        setEtapaAtual('erro');
+        // setCadastrandoBiometria(false);
+
+        // EXTRAIR MENSAGEM DE MÚLTIPLAS FONTES POSSÍVEIS
+        let mensagemErro = 'Erro, tente novamenente.';
+        let detalhes = '';
+
+        // Fonte 1: mensagem direta do webhook
+        if (dadosErro?.mensagem) {
+            mensagemErro = dadosErro.mensagem;
+            console.log('✅ Usando mensagem do webhook:', mensagemErro);
+        }
+        // Fonte 2: erro técnico dos dados
+        else if (dadosErro?.dados?.erro_tecnico) {
+            mensagemErro = dadosErro.dados.erro_tecnico;
+            console.log('✅ Usando erro_tecnico dos dados:', mensagemErro);
+        }
+        // Fonte 3: etapa com erro
+        else if (dadosErro?.etapa === 'erro') {
+            mensagemErro = 'Erro durante o processo de cadastro';
+            console.log('✅ Erro detectado pela etapa');
+        }
+
+        // Coletar detalhes para debug
+        if (dadosErro?.dados) {
+            detalhes = JSON.stringify(dadosErro.dados, null, 2);
+        } else if (dadosErro) {
+            detalhes = JSON.stringify(dadosErro, null, 2);
+        }
+
+        console.log('🎯 [FRONTEND] Mensagem final do erro:', mensagemErro);
+
+        setErroBiometria(mensagemErro);
+        setDetalhesErro(detalhes);
+
+        // Log no banco
+        if (usuarioCriado) {
+            try {
                 await databaseService.createActionLog({
                     id_usuario: usuarioCriado.id,
                     identificador: usuarioCriado.identificador,
-                    acao: 'CADASTRAR_BIOMETRIA',
+                    acao: 'CADASTRAR_BIOMETRIA',  // ✅ CORRIGIDO
                     status: 'ERRO',
-                    detalhes: 'Falha no cadastro da biometria',
+                    detalhes: `Falha: ${mensagemErro}`,
                     nome_usuario: usuarioCriado.nome
                 });
+            } catch (logError) {
+                console.error('❌ Erro ao salvar log:', logError);
             }
         }
     };
@@ -232,8 +335,23 @@ export default function AddUserModal({
 
         if (modalAtivoRef.current) {
             setEtapaAtual('timeout');
-            setCadastrandoBiometria(false);
+            setErroBiometria('Timeout - O processo de cadastro demorou muito tempo');
+            setDetalhesErro('O cadastro não foi concluído dentro do tempo esperado.');
         }
+    };
+
+    const limparErroETentarNovamente = () => {
+        setErroBiometria(null);
+        setDetalhesErro(null);
+        setEtapaAtual('');
+        setCadastrandoBiometria(false);
+
+        // Dar um pequeno delay antes de tentar novamente
+        setTimeout(() => {
+            if (modalAtivoRef.current) {
+                iniciarCadastroBiometria();
+            }
+        }, 500);
     };
 
     // 🔌 TRATAMENTO DE ERRO DE CONEXÃO
@@ -244,6 +362,13 @@ export default function AddUserModal({
             setEtapaAtual('erro_conexao');
             setCadastrandoBiometria(false);
         }
+    };
+
+    const cancelarELimparErro = () => {
+        setErroBiometria(null);
+        setDetalhesErro(null);
+        setEtapaAtual('');
+        setCadastrandoBiometria(false);
     };
 
     const pararPollingBiometria = () => {
@@ -724,7 +849,10 @@ export default function AddUserModal({
                     </div>
                     <button
                         className="w-7 h-7 flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
-                        onClick={handleClose}
+                        onClick={() => {
+                            handleClose();
+                            cancelarCadastroBiometria();
+                        }}
                     >
                         <span className="text-xl font-bold">✕</span>
                     </button>
@@ -980,6 +1108,15 @@ export default function AddUserModal({
                                     currentStep={etapaAtual}
                                     isActive={cadastrandoBiometria}
                                 />
+                                {erroBiometria && (
+                                    <ErrorDisplay
+                                        error={erroBiometria}
+                                        details={detalhesErro || undefined}
+                                        showDetails={process.env.NODE_ENV === 'development'}
+                                        onRetry={limparErroETentarNovamente}
+                                        onCancel={cancelarELimparErro}
+                                    />
+                                )}
                             </div>
                         </div>
                     )}
