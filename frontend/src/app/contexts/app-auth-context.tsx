@@ -40,9 +40,6 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   const handleLogout = () => {
     setIsLoggingOut(true);
     setIsAuthenticated(false);
-    setTimeout(() => {
-      setCurrentUser(null);
-    }, 500);
     setAuthToken(null);
 
     if (typeof window !== 'undefined') {
@@ -52,6 +49,10 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     router.push('/');
+
+    setTimeout(() => {
+      setCurrentUser(null);
+    }, 500);
   };
 
   const checkDatabaseConnection = async () => {
