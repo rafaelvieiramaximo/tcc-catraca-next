@@ -1,0 +1,7 @@
+docker compose up -d
+
+docker exec -t 3ec2080ebc18 pg_dump -U postgres -d turnstile_system  > backup_25_11.sql
+
+docker ps
+
+docker-compose down
