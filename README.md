@@ -18,18 +18,6 @@ Sistema completo de controle de acesso biométrico desenvolvido para **garantir 
 
 ## 🏗️ Arquitetura do Sistema
 
-```mermaid
-graph TB
-    A[👤 Usuário] --> B[🖥️ Frontend Next.js]
-    B --> C[🔗 Backend Node.js]
-    C --> D[🗄️ PostgreSQL]
-    C --> E[🔧 Catraca Python]
-    E --> F[🤝 Webhooks]
-    F --> C
-    E --> G[📊 Sensor Biométrico]
-    G --> E
-```
-
 ### **Componentes Principais:**
 
 | Componente | Tecnologia | Função |
