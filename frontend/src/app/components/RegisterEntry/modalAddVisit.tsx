@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from "react";
-import { databaseService } from "../../services/database-service";
+import { databaseService, UsuarioCompleto } from "../../services/database-service";
 import BiometryStepper from "../UserManagement/stepperBiometry";
 import ErrorDisplay from "../Error/ErrorDisplay";
 
@@ -9,12 +9,14 @@ interface AddVisitorModalProps {
     visible: boolean;
     onClose: () => void;
     onVisitorAdded: () => void;
+    currentUser: UsuarioCompleto | null;
 }
 
 export default function AddVisitorModal({
     visible,
     onClose,
     onVisitorAdded,
+    currentUser
 }: AddVisitorModalProps) {
     const [formData, setFormData] = useState({
         nome: "",

@@ -11,6 +11,7 @@ interface AddUserModalProps {
     onUserAdded: () => void;
     userToEdit: UsuarioCompleto | null;
     user: UsuarioCompleto | null;
+    currentUser?: UsuarioCompleto | null;
     onOpenSystemModal?: () => void;
 }
 
@@ -20,7 +21,8 @@ export default function AddUserModal({
     onUserAdded,
     userToEdit,
     user,
-    onOpenSystemModal
+    onOpenSystemModal,
+    currentUser
 }: AddUserModalProps) {
     const [formData, setFormData] = useState({
         tipo: userToEdit?.tipo || ("ESTUDANTE" as TipoS),
@@ -229,7 +231,7 @@ export default function AddUserModal({
                 identificador: usuarioCriado.identificador,
                 acao: 'CADASTRAR_BIOMETRIA',
                 status: 'SUCESSO',
-                detalhes: `Biometria cadastrada com sucesso! Posição: ${dados.dados?.posicao || 'N/A'}`,
+                detalhes: `Biometria cadastrada com sucesso! Posição: ${dados.dados?.posicao || 'N/A'} -  Autor:${currentUser?.nome} `,
                 nome_usuario: usuarioCriado.nome
             });
         }
@@ -733,7 +735,7 @@ export default function AddUserModal({
                         identificador: formData.identificador.trim(),
                         acao: 'CRIAR_USUARIO',
                         status: 'SUCESSO',
-                        detalhes: `${formData.tipo} ${formData.nome} cadastrado sem biometria`,
+                        detalhes: `${formData.tipo} ${formData.nome} cadastrado sem biometria - Autor: ${currentUser?.nome}`,
                         nome_usuario: formData.nome
                     });
 

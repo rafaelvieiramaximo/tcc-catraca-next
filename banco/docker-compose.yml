@@ -11,6 +11,8 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: rafarod
       POSTGRES_DB: turnstile_system
+      TZ: America/Sao_Paulo
+      PGTZ: America/Sao_Paulo
     volumes:
       - db_data:/var/lib/postgresql/data
       - ./db/backup.sql:/docker-entrypoint-initdb.d/backup.sql:ro

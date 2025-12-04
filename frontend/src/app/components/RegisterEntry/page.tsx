@@ -18,7 +18,7 @@ interface DailyStats {
     saidas: number;
 }
 
-export default function RegisterEntry({ user, onLogout }: RegisterProps) {
+export default function RegisterEntry({ user: currentUser, onLogout }: RegisterProps) {
     const [latestEntry, setLatestEntry] = useState<LogEntrada | null>(null);
     const [imgUser, setImgUser] = useState<UsuarioCompleto | null>(null);
     const [recentEntries, setRecentEntries] = useState<LogEntrada[]>([]);
@@ -166,7 +166,7 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
     if (loading) {
         return (
             <div className="h-screen overflow-hidden flex flex-col bg-gray-50">
-                <NavBarRegister onLogout={onLogout} user={user} />
+                <NavBarRegister onLogout={onLogout} user={currentUser} />
                 <div className="flex-1 flex flex-col">
                     <div className="flex flex-col items-center justify-center h-40vh text-gray-500">
                         <div className="w-8 h-8 border-4 border-gray-300 border-t-blue-500 rounded-full animate-spin mb-3"></div>
@@ -186,7 +186,7 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
             </div> */}
 
             <div className={showAddVisitorModal ? 'blur-sm transition-all duration-300' : ''}>
-                <NavBarRegister onLogout={onLogout} user={user} />
+                <NavBarRegister onLogout={onLogout} user={currentUser} />
 
                 <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 bg-gray-50 scroll-smooth">
                     {/* Admin Header */}
@@ -381,6 +381,7 @@ export default function RegisterEntry({ user, onLogout }: RegisterProps) {
                 visible={showAddVisitorModal}
                 onClose={() => setShowAddVisitorModal(false)}
                 onVisitorAdded={() => loadData(false)}
+                currentUser={currentUser}
             />
         </div>
     );

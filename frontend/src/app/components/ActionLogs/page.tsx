@@ -12,6 +12,7 @@ import autoTable from "jspdf-autotable";
 interface ActionLogsProps {
   onLogout?: () => void;
   user: UsuarioCompleto | null;
+  currentUser: UsuarioCompleto | null;
 }
 
 interface FiltrosState {
@@ -25,7 +26,7 @@ interface FiltrosState {
   usuario_id?: number;
 }
 
-export default function ActionLogs({ onLogout, user }: ActionLogsProps) {
+export default function ActionLogs({ onLogout, user, currentUser }: ActionLogsProps) {
   const [logs, setLogs] = useState<LogAction[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [filtros, setFiltros] = useState<FiltrosState>({
@@ -381,7 +382,7 @@ export default function ActionLogs({ onLogout, user }: ActionLogsProps) {
   };
 
   const getStatusColor = (status: string) => {
-    return status === "SUCESSO" ? "text-green-600 font-semibold" : "text-red-600 font-semibold";
+    return status === "SUCESSO" || status === "INICIADO" ? "text-green-600 font-semibold" : "text-red-600 font-semibold";
   };
 
   const handleLogout = () => {

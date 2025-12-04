@@ -12,7 +12,7 @@ interface UserManagementProps {
   user: UsuarioCompleto | null;
 }
 
-export default function UserManagement({ onLogout, user }: UserManagementProps) {
+export default function UserManagement({ onLogout, user: currentUser }: UserManagementProps) {
   const [users, setUsers] = useState<UsuarioCompleto[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<UsuarioCompleto[]>([]);
   const [searchText, setSearchText] = useState("");
@@ -32,7 +32,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
       const usersData = await databaseService.getAllUsersWithFingerprintStatus();
 
       let usuariosFiltrados = usersData;
-      if (user?.tipo === 'RH' || user?.tipo === 'PORTARIA') {
+      if (currentUser?.tipo === 'RH' || currentUser?.tipo === 'PORTARIA') {
         usuariosFiltrados = usersData.filter(u =>
           u.tipo === 'ESTUDANTE' || u.tipo === 'FUNCIONARIO' || u.tipo === 'VISITANTE'
         );
@@ -93,14 +93,14 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
     }
   };
 
-  const logUserDeletion = async (user: UsuarioCompleto, success: boolean) => {
+  const logUserDeletion = async (user: UsuarioCompleto, success: boolean, currentUser: UsuarioCompleto | null) => {
     try {
       await databaseService.createActionLog({
         id_usuario: user.id,
         identificador: user.identificador,
         acao: 'EXCLUSAO_USUARIO',
         status: success ? 'SUCESSO' : 'ERRO',
-        detalhes: `Usuário "${user.nome}" (tipo=${user.tipo}) ${success ? 'excluído com sucesso' : 'falha na exclusão'}`,
+        detalhes: `Usuário "${user.nome}" (tipo=${user.tipo}) ${success ? 'excluído com sucesso por ' + (currentUser ? currentUser.nome : 'desconhecido') : 'falha na exclusão'}`,
         nome_usuario: user.nome
       });
     } catch (error) {
@@ -116,7 +116,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
     try {
       const userToDelete = users.find(u => u.id === userId);
       if (userToDelete) {
-        await logUserDeletion(userToDelete, true);
+        await logUserDeletion(userToDelete, true, currentUser);
         await databaseService.deleteUser(userId);
         await loadUsers();
         setShowDeleteSuccess(true);
@@ -167,8 +167,8 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <Header onLogout={handleLogout} pageName="Gerenciador de Usuários" user={user} />
-        {user?.tipo === 'ADMIN' && (
+        <Header onLogout={handleLogout} pageName="Gerenciador de Usuários" user={currentUser} />
+        {currentUser?.tipo === 'ADMIN' && (
           <MenuNavigation currentPath="/usermanage" />
         )}
         <div className="flex-1 flex flex-col items-center justify-center p-10">
@@ -182,8 +182,8 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
   return (
     <div className="min-h-screen bg-gray-50 relative">
       <div className={showAddModal || showSystemUserModal ? 'blur-xs' : ''}>
-        <Header onLogout={handleLogout} pageName="Gerenciador de Usuários" user={user} />
-        {user?.tipo === 'ADMIN' && (
+        <Header onLogout={handleLogout} pageName="Gerenciador de Usuários" user={currentUser} />
+        {currentUser?.tipo === 'ADMIN' && (
           <MenuNavigation currentPath="/usermanage" />
         )}
 
@@ -286,7 +286,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
           </div>
 
           {/* Botão Adicionar Usuário - Mostrar apenas se usuário tem permissão */}
-          {(user?.tipo === 'ADMIN' || user?.tipo === 'RH') && (
+          {(currentUser?.tipo === 'ADMIN' || currentUser?.tipo === 'RH') && (
             <button
               className="fixed bottom-5 right-5 bg-black rounded-full w-15 h-15 flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow"
               onClick={handleAddUser}
@@ -323,7 +323,7 @@ export default function UserManagement({ onLogout, user }: UserManagementProps) 
         }}
         onUserAdded={handleUserAdded}
         userToEdit={editUser}
-        user={user}
+        user={currentUser}
         onOpenSystemModal={() => {
           setShowAddModal(false);
           setShowSystemUserModal(true);
