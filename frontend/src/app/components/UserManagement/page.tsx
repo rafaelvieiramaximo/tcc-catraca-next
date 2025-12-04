@@ -84,6 +84,9 @@ export default function UserManagement({ onLogout, user: currentUser }: UserMana
   const handleAddUser = () => {
     setShowAddModal(true);
   };
+  const handleAddSystemUser = () => {
+    setShowSystemUserModal(true);
+  }
 
   const handleEditUser = (userId: number) => {
     const user = users.find((u) => u.id === userId);
@@ -285,20 +288,33 @@ export default function UserManagement({ onLogout, user: currentUser }: UserMana
             )}
           </div>
 
-          {/* Botão Adicionar Usuário - Mostrar apenas se usuário tem permissão */}
-          {(currentUser?.tipo === 'ADMIN' || currentUser?.tipo === 'RH') && (
-            <button
-              className="fixed bottom-5 right-5 bg-black rounded-full w-15 h-15 flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow"
-              onClick={handleAddUser}
-            >
-              <span className="text-2xl text-white font-bold">+</span>
-            </button>
-          )}
-        </div>
+            {/* Botões Adicionar Usuário - Mostrar apenas se usuário tem permissão */}
+            <div className="fixed bottom-5 right-5 flex flex-col gap-3 items-center">
+            {currentUser?.tipo === 'ADMIN' && (
+              <button
+              className="bg-blue-900 rounded-full w-15 h-15 flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow"
+              onClick={handleAddSystemUser}
+              title="Adicionar usuário do sistema"
+              >
+              <span className="text-2xl text-white font-bold">⚙️</span>
+              </button>
+            )}
 
-        {/* Notificação de sucesso */}
-        {showDeleteSuccess && (
-          <div className="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-red-500 rounded-lg px-4 py-3 shadow-lg">
+            {(currentUser?.tipo === 'ADMIN' || currentUser?.tipo === 'RH') && (
+              <button
+              className="bg-black rounded-full w-15 h-15 flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow"
+              onClick={handleAddUser}
+              title="Adicionar usuário"
+              >
+              <span className="text-2xl text-white font-bold">+</span>
+              </button>
+            )}
+            </div>
+          </div>
+
+          {/* Notificação de sucesso */}
+          {showDeleteSuccess && (
+            <div className="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-red-500 rounded-lg px-4 py-3 shadow-lg">
             <div className="text-white font-bold text-center text-sm">
               Usuário excluído com sucesso!
             </div>
