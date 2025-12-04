@@ -218,7 +218,7 @@ export default function RegisterEntry({ user: currentUser, onLogout }: RegisterP
                                 </div>
                             ) : (
                                 <div className={`bg-white border border-gray-200 rounded p-4 mb-4 shadow-sm transition-all duration-200 ${
-                                    showSuccess ? 'border-l-4 border-l-green-500 shadow-green-100' : ''
+                                    showSuccess && !latestEntry.controle ? 'border-l-4 border-l-green-500 shadow-green-100' : showSuccess && latestEntry.controle ? 'border-l-4 border-l-red-500 shadow-green-100' : ''
                                 }`}>
                                     <div className="flex items-start gap-4 mb-4">
                                         <div className="w-24 h-24 bg-gray-700 rounded-full flex items-center justify-center flex-shrink-0">
