@@ -197,9 +197,6 @@ export default function RegisterEntry({ user: currentUser, onLogout }: RegisterP
                         <h1 className="text-xl font-normal opacity-90 m-0">
                             PORTARIA - SISTEMA 🟢 ATIVO
                         </h1>
-                        <div className="text-sm opacity-70 mt-1">
-                            Atualização automática via trigger
-                        </div>
                     </div>
 
                     {/* Dashboard */}
@@ -313,7 +310,7 @@ export default function RegisterEntry({ user: currentUser, onLogout }: RegisterP
                         {/* Sidebar */}
                         <div className="flex-1 min-w-64 flex flex-col gap-4">
                             {/* Stats Card */}
-                            <div className="bg-white text-gray-800 p-5 rounded text-center shadow-sm border border-gray-200">
+                            {/* <div className="bg-white text-gray-800 p-5 rounded text-center shadow-sm border border-gray-200">
                                 <div className="text-3xl mb-3 opacity-80">📈</div>
                                 <h3 className="text-gray-800 text-lg font-semibold mb-2">
                                     ESTATÍSTICAS DO DIA 📡
@@ -332,7 +329,7 @@ export default function RegisterEntry({ user: currentUser, onLogout }: RegisterP
                                         <span className="text-gray-500 text-xs font-medium">Saídas</span>
                                     </div>
                                 </div>
-                            </div>
+                            </div> */}
 
                             {/* Logs Card */}
                             <div className="bg-white text-gray-800 p-5 rounded text-center shadow-sm border border-gray-200">

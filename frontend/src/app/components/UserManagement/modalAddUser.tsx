@@ -922,12 +922,12 @@ export default function AddUserModal({
                                         >
                                             📸 Tirar Foto
                                         </button>
-                                        <button
+                                        {/* <button
                                             className="px-4 py-2 bg-gray-500 text-white rounded-md text-sm font-medium hover:bg-gray-600"
                                             onClick={switchCamera}
                                         >
                                             🔄 {facingMode === "user" ? "Traseira" : "Frontal"}
-                                        </button>
+                                        </button> */}
                                     </div>
                                 </div>
                             ) : previewUrl ? (
